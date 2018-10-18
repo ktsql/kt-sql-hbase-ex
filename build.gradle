@@ -1,3 +1,11 @@
+buildscript {
+    ext.calcite_version = '1.17.0'
+    ext.hbaseclient_version = '2.0.2'
+    ext.tephra_version = '0.15.0-incubating'
+    ext.kotlinlogging_version = '1.5.6'
+    ext.config4k_version = '0.3.4'
+}
+
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.2.71'
 }
@@ -7,10 +15,24 @@ version '1.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
+    jcenter()
 }
 
 dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    // 功能库
+    compile "org.apache.calcite:calcite-core:$calcite_version"
+    compile group: 'org.apache.hbase', name: 'hbase-client', version: "$hbaseclient_version"
+    compile "org.apache.tephra:tephra-api:$tephra_version"
+    compile "org.apache.tephra:tephra-core:$tephra_version"
+    compile "org.apache.tephra:tephra-hbase-compat-2.0:$tephra_version"
+    // 支持库
+    compile "io.github.microutils:kotlin-logging:$kotlinlogging_version"
+    compile "io.github.config4k:config4k:$config4k_version"
+    
+    // 测试库
+    testCompile "org.jetbrains.kotlin:kotlin-test:1.2.71"
+    testCompile "junit:junit:4.12"
 }
 
 compileKotlin {
