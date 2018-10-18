@@ -2,10 +2,15 @@ package me.principality.ktsql.backend.hbase
 
 import com.google.common.collect.ImmutableMap
 import mu.KotlinLogging
+import org.apache.calcite.rel.type.RelProtoDataType
 import org.apache.calcite.schema.Table
 import org.apache.calcite.schema.impl.AbstractSchema
+import org.apache.calcite.sql2rel.InitializerExpressionFactory
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.client.Connection
+import org.apache.hadoop.hbase.HColumnDescriptor
+import org.apache.hadoop.hbase.TableName
+
 
 /**
  * Calcite对表的创建有几种：
@@ -30,7 +35,8 @@ import org.apache.hadoop.hbase.client.Connection
 class HBaseSchema : AbstractSchema {
     private val logger = KotlinLogging.logger {}
     private val connection: Connection
-    private val tableMap: Map<String, Table>
+    private val tableMap: MutableMap<String, Table>
+    private val columnFamily: String = "cf"
 
     constructor(connection: Connection) {
         this.connection = connection
@@ -46,13 +52,42 @@ class HBaseSchema : AbstractSchema {
 
     /**
      * 实现对创建表的支持，在RelNode执行的Context中，包含了CalciteSchema，
-     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问，但依赖关系如何处理？
+     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问
      */
-    fun createTable(): Table {
-        TODO("not implement")
+    fun createTable(name: String,
+                    protoStoredRowType: RelProtoDataType,
+                    protoRowType: RelProtoDataType,
+                    initializerExpressionFactory: InitializerExpressionFactory): Table {
+        // 先创建表
+        val admin = connection.admin
+
+        // Instantiating table descriptor class
+        val tableDescriptor = HTableDescriptor(TableName.valueOf(name))
+        tableDescriptor.addFamily(HColumnDescriptor("column_name"))
+        admin.createTable(tableDescriptor)
+
+        val table = createTable(name, tableDescriptor)
+
+        // 然后添加到tableMap
+        tableMap.put(name, table)
+
+        return table
     }
 
-    private fun createTableMap(): Map<String, Table> {
+    fun dropTable(name: String) {
+        val hBaseAdmin = connection.admin
+        val tableName = TableName.valueOf(name)
+
+        if (hBaseAdmin.tableExists(tableName)) {
+            hBaseAdmin.disableTable(tableName);
+            hBaseAdmin.deleteTable(tableName);
+        }
+    }
+
+    /**
+     * 需要支持从HBase中罗列出所有的表
+     */
+    private fun createTableMap(): MutableMap<String, Table> {
         val admin = connection.admin
         val tables = admin.listTables()
 
@@ -60,13 +95,13 @@ class HBaseSchema : AbstractSchema {
             logger.debug("find none table")
         }
 
-        val builder = ImmutableMap.builder<String, Table>()
-        for (table in tables) {
-            val source = table.nameAsString
-            val table = createTable(source, table)
+        val builder = HashMap<String, Table>()
+        for (descriptor in tables) {
+            val source = descriptor.nameAsString
+            val table = createTable(source, descriptor)
             builder.put(source, table)
         }
-        val map = builder.build()
+        val map = builder.toMutableMap()
         return map
     }
 

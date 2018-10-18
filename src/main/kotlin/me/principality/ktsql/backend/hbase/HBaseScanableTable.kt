@@ -1,9 +1,14 @@
 package me.principality.ktsql.backend.hbase
 
 import org.apache.calcite.DataContext
+import org.apache.calcite.linq4j.AbstractEnumerable
 import org.apache.calcite.linq4j.Enumerable
 import org.apache.calcite.schema.ScannableTable
 import org.apache.hadoop.hbase.HTableDescriptor
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.Result
+import org.apache.hadoop.hbase.client.ResultScanner
+import org.apache.hadoop.hbase.client.Scan
 
 
 /**
@@ -13,31 +18,23 @@ class HBaseScanableTable(name: String, descriptor: HTableDescriptor) :
         HBaseModifiableTable(name, descriptor), ScannableTable {
 
     /**
-     *
+     * 实现全表扫描的数据记录读取
      */
     override fun scan(root: DataContext?): Enumerable<Array<Any>> {
-        TODO("not implemented")
+        val connection = HBaseConnection.connection()
+        val htable = connection.getTable(TableName.valueOf(name))
 
-/*
         val scan = Scan()
         var rs: ResultScanner? = null
-        val htable = HTable(conf, tableName)
         try {
             rs = htable.getScanner(scan)
-            for (r in rs!!) {
-                for (kv in r.list()) {
-
-                    System.out.println(Bytes.toString(kv.getRow()))
-                    System.out.println(Bytes.toString(kv.getFamily()))
-                    System.out.println(Bytes.toString(kv.getQualifier()))
-                    System.out.println(Bytes.toString(kv.getValue()))
-                    System.out.println(kv.getTimestamp())
-                }
+            val array = Array<Any>(rs.count(), {})
+            for ((k, v) in rs!!.withIndex()) {
+                array.set(k, v)
             }
+            TODO() // return Enumerable<>
         } finally {
             rs!!.close()
         }
-        return rs
-*/
     }
 }

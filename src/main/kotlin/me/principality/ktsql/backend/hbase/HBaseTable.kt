@@ -11,7 +11,6 @@ import java.util.ArrayList
 import org.apache.hadoop.hbase.HColumnDescriptor
 
 
-
 /**
  * 通过实现不同类型的表，优化查询性能
  * https://calcite.apache.org/docs/tutorial.html#optimizing-queries-using-planner-rules
