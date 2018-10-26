@@ -14,6 +14,7 @@ import java.lang.reflect.Type
 /**
  * 未实现，下推算法如何做要进一步考虑
  */
+@Deprecated("")
 class HBaseTranslatableTable: HBaseTable, QueryableTable, TranslatableTable {
     constructor(name: String, htable: HTableDescriptor) : super(name, htable) {
     }

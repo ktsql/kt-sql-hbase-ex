@@ -7,7 +7,7 @@ import org.apache.calcite.schema.ProjectableFilterableTable
 import org.apache.hadoop.hbase.HTableDescriptor
 
 class HBaseProjectableFilterableTable(name: String, descriptor: HTableDescriptor) :
-        HBaseModifiableTable(name, descriptor), ProjectableFilterableTable {
+        HBaseTable(name, descriptor), ProjectableFilterableTable {
 
     override fun scan(root: DataContext?,
                       filters: MutableList<RexNode>?,

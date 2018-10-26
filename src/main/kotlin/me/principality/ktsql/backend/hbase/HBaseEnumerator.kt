@@ -5,6 +5,7 @@ import org.apache.calcite.linq4j.Enumerator
 /**
  * 使用HBase ResultSet实现
  */
+@Deprecated("")
 class HBaseEnumerator<E> : Enumerator<E> {
     override fun moveNext(): Boolean {
         TODO("not implemented")

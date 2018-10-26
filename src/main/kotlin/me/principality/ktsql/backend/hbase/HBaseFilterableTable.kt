@@ -7,7 +7,7 @@ import org.apache.calcite.schema.FilterableTable
 import org.apache.hadoop.hbase.HTableDescriptor
 
 class HBaseFilterableTable(name: String, descriptor: HTableDescriptor) :
-        HBaseModifiableTable(name, descriptor), FilterableTable {
+        HBaseTable(name, descriptor), FilterableTable {
 
     override fun scan(root: DataContext?,
                       filters: MutableList<RexNode>?): Enumerable<Array<Any>> {

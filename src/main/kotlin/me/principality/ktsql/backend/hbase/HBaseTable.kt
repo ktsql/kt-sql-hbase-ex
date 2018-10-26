@@ -1,9 +1,13 @@
 package me.principality.ktsql.backend.hbase
 
+import org.apache.calcite.adapter.java.AbstractQueryableTable
 import org.apache.calcite.linq4j.AbstractEnumerable
 import org.apache.calcite.linq4j.Enumerator
+import org.apache.calcite.linq4j.QueryProvider
+import org.apache.calcite.linq4j.Queryable
 import org.apache.calcite.rel.type.RelDataType
 import org.apache.calcite.rel.type.RelDataTypeFactory
+import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.schema.impl.AbstractTable
 import org.apache.calcite.util.Pair
 import org.apache.hadoop.hbase.HTableDescriptor
@@ -44,18 +48,24 @@ import java.util.*
  *
  * SQL查询应尽量考虑把project, filter以及aggregate下推到region server，从而获得更好的性能
  */
-abstract class HBaseTable : AbstractTable {
+abstract class HBaseTable : AbstractQueryableTable {
     protected val name: String
     protected val htableDescriptor: HTableDescriptor
     protected val table: Table
     protected val isTransactional: Boolean
     protected val indexType: IndexType = IndexType.NONE // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
 
-    constructor(name: String, descriptor: HTableDescriptor) {
+    constructor(name: String, descriptor: HTableDescriptor) : super(Array<Any>::class.java) {
         this.name = name
         this.htableDescriptor = descriptor
         this.table = HBaseConnection.connection().getTable(TableName.valueOf(name))
         this.isTransactional = true
+    }
+
+    override fun <T : Any?> asQueryable(queryProvider: QueryProvider?,
+                                        schema: SchemaPlus?,
+                                        tableName: String?): Queryable<T> {
+        throw NotImplementedError("No need to implement")
     }
 
     /**

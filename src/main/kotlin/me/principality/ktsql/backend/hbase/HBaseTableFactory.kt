@@ -6,5 +6,6 @@ package me.principality.ktsql.backend.hbase
  *
  * 参考：https://calcite.apache.org/docs/tutorial.html#custom-tables
  */
+@Deprecated("")
 class HBaseTableFactory {
 }

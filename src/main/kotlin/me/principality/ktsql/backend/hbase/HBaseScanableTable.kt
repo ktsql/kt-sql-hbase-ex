@@ -12,7 +12,7 @@ import org.apache.hadoop.hbase.client.Scan
  * 实现对扫描的支持，创建时，初始化相关环境，在scan()时完成对数据的扫描处理
  */
 class HBaseScanableTable(name: String, descriptor: HTableDescriptor) :
-        HBaseModifiableTable(name, descriptor), ScannableTable {
+        HBaseTable(name, descriptor), ScannableTable {
 
     /**
      * 实现全表扫描的数据记录读取
