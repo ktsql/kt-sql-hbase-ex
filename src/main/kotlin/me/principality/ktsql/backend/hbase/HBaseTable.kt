@@ -1,15 +1,16 @@
 package me.principality.ktsql.backend.hbase
 
+import org.apache.calcite.linq4j.AbstractEnumerable
+import org.apache.calcite.linq4j.Enumerator
 import org.apache.calcite.rel.type.RelDataType
 import org.apache.calcite.rel.type.RelDataTypeFactory
 import org.apache.calcite.schema.impl.AbstractTable
 import org.apache.calcite.util.Pair
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.ResultScanner
 import org.apache.hadoop.hbase.client.Table
-import java.util.ArrayList
-import org.apache.hadoop.hbase.HColumnDescriptor
-
+import java.util.*
 
 /**
  * 通过实现不同类型的表，优化查询性能
@@ -47,11 +48,14 @@ abstract class HBaseTable : AbstractTable {
     protected val name: String
     protected val htableDescriptor: HTableDescriptor
     protected val table: Table
+    protected val isTransactional: Boolean
+    protected val indexType: IndexType = IndexType.NONE // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
 
     constructor(name: String, descriptor: HTableDescriptor) {
         this.name = name
         this.htableDescriptor = descriptor
         this.table = HBaseConnection.connection().getTable(TableName.valueOf(name))
+        this.isTransactional = true
     }
 
     /**
@@ -85,6 +89,13 @@ abstract class HBaseTable : AbstractTable {
     }
 
     /**
+     * 支持的索引类型
+     */
+    enum class IndexType {
+        NONE, KEY_VALUE
+    }
+
+    /**
      * 对表的数据读取方式进行定义，
      * - 如果是全表扫描，过滤和投影由calcite完成
      * - 如果是过滤扫描，投影由calcite完成
@@ -94,5 +105,38 @@ abstract class HBaseTable : AbstractTable {
      */
     enum class Flavor {
         SCANNABLE, FILTERABLE, PROJECTFILTERABLE
+    }
+
+    class EnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {
+        private val results: List<T> = rs.toList()
+        private var index: Int = 0
+
+        override fun moveNext(): Boolean {
+            if (index < results.size) {
+                index++
+                return true
+            }
+            return false
+        }
+
+        override fun current(): T {
+            return results.get(index)
+        }
+
+        override fun reset() {
+            index = 0
+        }
+
+        override fun close() {
+            // 不需要
+        }
+    }
+
+    class EnumerableImpl<T>(rs: ResultScanner) : AbstractEnumerable<T>() {
+        private val resultScanner: Iterable<T> = rs as Iterable<T>
+
+        override fun enumerator(): Enumerator<T> {
+            return EnumeratorImpl(resultScanner)
+        }
     }
 }

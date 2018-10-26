@@ -1,15 +1,12 @@
 package me.principality.ktsql.backend.hbase
 
 import org.apache.calcite.DataContext
-import org.apache.calcite.linq4j.AbstractEnumerable
 import org.apache.calcite.linq4j.Enumerable
 import org.apache.calcite.schema.ScannableTable
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.Result
 import org.apache.hadoop.hbase.client.ResultScanner
 import org.apache.hadoop.hbase.client.Scan
-
 
 /**
  * 实现对扫描的支持，创建时，初始化相关环境，在scan()时完成对数据的扫描处理
@@ -32,7 +29,7 @@ class HBaseScanableTable(name: String, descriptor: HTableDescriptor) :
             for ((k, v) in rs!!.withIndex()) {
                 array.set(k, v)
             }
-            TODO() // return Enumerable<>
+            return EnumerableImpl<Array<Any>>(rs)
         } finally {
             rs!!.close()
         }

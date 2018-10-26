@@ -1,7 +1,7 @@
 package me.principality.ktsql.backend.hbase
 
 /**
- * 类型转换支持，为将来的扩展留下可能性
+ * 类型转换支持，实现从HBASE类型到JVM类型的转换
  */
 class HBaseFieldType {
 }

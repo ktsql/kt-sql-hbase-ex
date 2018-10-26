@@ -3,10 +3,6 @@ package me.principality.ktsql.backend.hbase
 import org.apache.calcite.schema.Schema
 import org.apache.calcite.schema.SchemaFactory
 import org.apache.calcite.schema.SchemaPlus
-import org.apache.hadoop.hbase.HBaseConfiguration
-import org.apache.hadoop.hbase.HConstants
-import org.apache.hadoop.hbase.client.ConnectionFactory
-import java.lang.IllegalArgumentException
 
 /**
  * https://calcite.apache.org/docs/tutorial.html

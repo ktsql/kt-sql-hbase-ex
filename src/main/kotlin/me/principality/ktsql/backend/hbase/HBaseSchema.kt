@@ -1,16 +1,14 @@
 package me.principality.ktsql.backend.hbase
 
-import com.google.common.collect.ImmutableMap
 import mu.KotlinLogging
 import org.apache.calcite.rel.type.RelProtoDataType
 import org.apache.calcite.schema.Table
 import org.apache.calcite.schema.impl.AbstractSchema
 import org.apache.calcite.sql2rel.InitializerExpressionFactory
-import org.apache.hadoop.hbase.HTableDescriptor
-import org.apache.hadoop.hbase.client.Connection
 import org.apache.hadoop.hbase.HColumnDescriptor
+import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
-
+import org.apache.hadoop.hbase.client.Connection
 
 /**
  * Calcite对表的创建有几种：
