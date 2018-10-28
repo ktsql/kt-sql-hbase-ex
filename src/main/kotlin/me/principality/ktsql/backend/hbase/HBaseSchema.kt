@@ -34,7 +34,6 @@ class HBaseSchema : AbstractSchema {
     private val logger = KotlinLogging.logger {}
     private val connection: Connection
     private val tableMap: MutableMap<String, Table>
-    private val columnFamily: String = "cf"
 
     constructor(connection: Connection) {
         this.connection = connection
@@ -61,7 +60,7 @@ class HBaseSchema : AbstractSchema {
 
         // Instantiating table descriptor class
         val tableDescriptor = HTableDescriptor(TableName.valueOf(name))
-        tableDescriptor.addFamily(HColumnDescriptor("column_name"))
+        tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
         admin.createTable(tableDescriptor)
 
         val table = createTable(name, tableDescriptor)

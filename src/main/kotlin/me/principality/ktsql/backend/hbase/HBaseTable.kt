@@ -8,7 +8,6 @@ import org.apache.calcite.linq4j.Queryable
 import org.apache.calcite.rel.type.RelDataType
 import org.apache.calcite.rel.type.RelDataTypeFactory
 import org.apache.calcite.schema.SchemaPlus
-import org.apache.calcite.schema.impl.AbstractTable
 import org.apache.calcite.util.Pair
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
@@ -51,14 +50,18 @@ import java.util.*
 abstract class HBaseTable : AbstractQueryableTable {
     protected val name: String
     protected val htableDescriptor: HTableDescriptor
-    protected val table: Table
-    protected val isTransactional: Boolean
+    protected val htable: Table
+    protected val isTransactional: Boolean // 默认为真，可以手动指明非真，用于快速插入数据
     protected val indexType: IndexType = IndexType.NONE // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
+
+    companion object {
+        val columnFamily: String = "cf"
+    }
 
     constructor(name: String, descriptor: HTableDescriptor) : super(Array<Any>::class.java) {
         this.name = name
         this.htableDescriptor = descriptor
-        this.table = HBaseConnection.connection().getTable(TableName.valueOf(name))
+        this.htable = HBaseConnection.connection().getTable(TableName.valueOf(name))
         this.isTransactional = true
     }
 
