@@ -60,10 +60,6 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
                 sourceExpressionList, flattened)
     }
 
-    /**
-     * hbase是以rowkey，column，timestamp这三个维度来区分的，传进来的Any?应可描述rowkey, column, timestamp
-     * 在timestamp不暴露的前提下，依赖rowkey和column对数据进行定位
-     */
     inner class HBaseMutableCollection(override val size: Int = 0) : MutableCollection<Any?> {
 
         override fun contains(element: Any?): Boolean {
@@ -80,6 +76,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
 
         /**
          * insert调用的是add()
+         * 这里要考虑好如何表达需要修改的值，需要传进来的是一行的有效数据
          */
         override fun add(element: Any?): Boolean {
             val target = element as String
@@ -106,7 +103,8 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         }
 
         /**
-         * delete调用的是remoteAll操作
+         * delete调用的是removeAll操作
+         * removeAll是通过rowkey的方式来表达，还是通过范围处理来表达？
          */
         override fun removeAll(elements: Collection<Any?>): Boolean {
             val deletes = ArrayList<Delete>()

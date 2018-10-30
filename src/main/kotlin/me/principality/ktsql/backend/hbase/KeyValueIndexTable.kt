@@ -52,6 +52,12 @@ class KeyValueIndexTable : Closeable {
                 secondaryIndexTable)
     }
 
+    companion object {
+        private val secondaryIndexFamily = Bytes.toBytes("secondaryIndexFamily")
+        private val secondaryIndexQualifier = Bytes.toBytes("r")
+        private val DELIMITER = byteArrayOf(0)
+    }
+
     @Throws(IOException::class)
     operator fun get(get: Get): Result {
         return get(listOf(get))!![0]
@@ -160,11 +166,5 @@ class KeyValueIndexTable : Closeable {
         }
 
         secondaryIndexTable.close()
-    }
-
-    companion object {
-        private val secondaryIndexFamily = Bytes.toBytes("secondaryIndexFamily")
-        private val secondaryIndexQualifier = Bytes.toBytes("r")
-        private val DELIMITER = byteArrayOf(0)
     }
 }

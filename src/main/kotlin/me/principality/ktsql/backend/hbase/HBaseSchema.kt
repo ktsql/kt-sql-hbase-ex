@@ -49,7 +49,9 @@ class HBaseSchema : AbstractSchema {
 
     /**
      * 实现对创建表的支持，在RelNode执行的Context中，包含了CalciteSchema，
-     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问
+     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问，这两者并不一样
+     *
+     * 需要对RelDataType、RelProtoDataType有深入认识
      */
     fun createTable(name: String,
                     protoStoredRowType: RelProtoDataType,
@@ -104,7 +106,7 @@ class HBaseSchema : AbstractSchema {
 
     private fun createTable(name: String, descriptor: HTableDescriptor): Table {
         when (HBaseConnection.flavor()) {
-            HBaseTable.Flavor.SCANNABLE -> return HBaseScanableTable(name, descriptor)
+            HBaseTable.Flavor.SCANNABLE -> return HBaseScannableTable(name, descriptor)
             HBaseTable.Flavor.FILTERABLE -> return HBaseFilterableTable(name, descriptor)
             HBaseTable.Flavor.PROJECTFILTERABLE -> return HBaseProjectableFilterableTable(name, descriptor)
             else -> throw IllegalArgumentException("Unknown flavor " + HBaseConnection.flavor())
