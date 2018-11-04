@@ -49,9 +49,10 @@ class HBaseScannableTable(name: String, descriptor: HTableDescriptor) :
             for ((k, v) in rs!!.withIndex()) {
                 array.set(k, v)
             }
-            return EnumerableImpl<Array<Any>>(rs)
+            return SqlEnumerableImpl<Array<Any>>(rs)
         } finally {
             rs!!.close()
+            htable.close()
         }
     }
 }

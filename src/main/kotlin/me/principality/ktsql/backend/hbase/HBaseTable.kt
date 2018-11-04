@@ -50,18 +50,17 @@ import java.util.*
 abstract class HBaseTable : AbstractQueryableTable {
     protected val name: String
     protected val htableDescriptor: HTableDescriptor
-    protected val htable: Table
     protected val isTransactional: Boolean // 默认为真，可以手动指明非真，用于快速插入数据
     protected val indexType: IndexType = IndexType.NONE // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
 
     companion object {
         val columnFamily: String = "cf"
+        val primaryKey: String = "id"
     }
 
     constructor(name: String, descriptor: HTableDescriptor) : super(Array<Any>::class.java) {
         this.name = name
         this.htableDescriptor = descriptor
-        this.htable = HBaseConnection.connection().getTable(TableName.valueOf(name))
         this.isTransactional = true
     }
 
@@ -75,7 +74,7 @@ abstract class HBaseTable : AbstractQueryableTable {
      * 通过该函数获得the names and types of a table's columns
      *
      * 可以通过hbase的表接口获得该信息，需要注意的是：
-     * 如何实现从不同数据源数据类型映射/转换到Calcite数据类型的逻辑？
+     * 如何实现从不同数据源数据类型映射/转换到Calcite数据类型的逻辑？只能通过元数据表
      *
      * HBase的column是不区分类型的
      */
@@ -101,6 +100,10 @@ abstract class HBaseTable : AbstractQueryableTable {
         return typeFactory.createStructType(Pair.zip(names, types))
     }
 
+    internal fun getHTable(): Table {
+        return HBaseConnection.connection().getTable(TableName.valueOf(name))
+    }
+
     /**
      * 支持的索引类型
      */
@@ -120,7 +123,7 @@ abstract class HBaseTable : AbstractQueryableTable {
         SCANNABLE, FILTERABLE, PROJECTFILTERABLE
     }
 
-    class EnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {
+    class SqlEnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {
         private val results: List<T> = rs.toList()
         private var index: Int = 0
 
@@ -145,11 +148,11 @@ abstract class HBaseTable : AbstractQueryableTable {
         }
     }
 
-    class EnumerableImpl<T>(rs: ResultScanner) : AbstractEnumerable<T>() {
+    class SqlEnumerableImpl<T>(rs: ResultScanner) : AbstractEnumerable<T>() {
         private val resultScanner: Iterable<T> = rs as Iterable<T>
 
         override fun enumerator(): Enumerator<T> {
-            return EnumeratorImpl(resultScanner)
+            return SqlEnumeratorImpl(resultScanner)
         }
     }
 }

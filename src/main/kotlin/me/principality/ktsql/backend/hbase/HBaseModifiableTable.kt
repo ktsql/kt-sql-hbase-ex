@@ -82,7 +82,9 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
             val target = element as String
             val put = Put(Bytes.toBytes("rowkey"))
             put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("rowkey"), Bytes.toBytes(target))
+            val htable = getHTable()
             htable.put(put)
+            htable.close()
             return true
         }
 
@@ -114,7 +116,9 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
                 delete.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(target))
                 deletes.add(delete)
             }
+            val htable = getHTable()
             htable.delete(deletes)
+            htable.close()
             return true
         }
 

@@ -7,10 +7,10 @@ import org.apache.hadoop.hbase.client.ConnectionFactory
 import java.util.*
 
 /**
- * 统一管理HBaseConnection，避免重复创建
+ * 统一管理HBaseConnection，避免重复创建，多个session可以共享一个connection
  *
- * Calcite并没有对连接资源进行管理（如关闭），且使用jdbc对存储层读取进行包装后，
- * 调用层(如SQL Execute)也无法对底层进行管理，必须要通过backend暴露出底层的资源管理接口，
+ * Calcite在资源使用完以后，对连接资源进行管理（如关闭）。使用jdbc对存储层读取进行包装后，
+ * 调用层(如SQL Execute)无法对底层进行管理，必须要通过backend暴露出底层的资源管理接口，
  * 才能对存储层连接资源进行管理
  *
  * 具体的资源管理机制，与HBase的客户端逻辑相关

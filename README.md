@@ -28,3 +28,23 @@
 ### 系统表
 
 待定，看SqlSchema的实际需求
+
+初步考虑，把表放在table.sys，字段放在column.sys表中
+table.sys的rowkey设计为：schema_path+name，包含字段：
+1. 是否为事务表
+2. 索引类型
+3. 表锁状态
+4. 创建时间
+5. 字符集
+6. 备注
+column.sys的rowkey设计为：schema_path+tablename+position+column_name，包含字段：
+1. 默认值
+2. 字段是否为空
+3. 数据类型
+4. 最大长度
+5. 精度
+6. 备注
+
+主键必须在创建表时指定，否则会报错。支持多个字段组成主键。主键创建对性能影响很大，需要谨慎选择
+
+表字段是否唯一、约束暂不考虑，待逐步完善
