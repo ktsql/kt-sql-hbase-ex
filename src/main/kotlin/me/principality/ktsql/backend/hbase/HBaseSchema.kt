@@ -110,6 +110,7 @@ class HBaseSchema : AbstractSchema {
      * 1. disable表，中断连接上该表的相关连接
      * 2. 对表进行删除
      * 3. 清除在table.sys中的相关数据
+     * 4. 清除表所在的CalciteSchema信息
      */
     fun dropTable(name: String) {
         val hBaseAdmin = connection.admin
@@ -119,6 +120,23 @@ class HBaseSchema : AbstractSchema {
             hBaseAdmin.disableTable(tableName);
             hBaseAdmin.deleteTable(tableName);
         }
+    }
+
+    /**
+     * 创建索引的流程：
+     *
+     */
+    fun createIndex(indexNamae: String, indexType: String, tableName: String,
+                    keyList: List<String>, isAscList: List<Boolean>) {
+
+    }
+
+    /**
+     * 删除索引的流程：
+     *
+     */
+    fun dropIndex(name: String) {
+
     }
 
     /**

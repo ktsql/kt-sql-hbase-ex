@@ -1,6 +1,8 @@
 package me.principality.ktsql.sqlexec.hbase
 
 import com.google.common.base.Throwables
+import me.principality.ktsql.backend.hbase.HBaseConnection
+import me.principality.ktsql.backend.hbase.HBaseTable
 import org.apache.hadoop.hbase.CellUtil
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
@@ -29,9 +31,9 @@ class KeyValueIndexTable : Closeable {
                 table: Table,
                 secondaryIndex: ByteArray,
                 indexName: String,
-                indexType: String = "kvidx") {
-        secondaryIndexTableName = TableName.valueOf(table.name.nameAsString + "." + indexType + "." + indexName)
-        this.connection = ConnectionFactory.createConnection(table.configuration)
+                indexType: String = HBaseTable.IndexType.KEY_VALUE.name) {
+        secondaryIndexTableName = TableName.valueOf("{$table.name.nameAsString.$indexType.$indexName}")
+        this.connection = HBaseConnection.connection()
         this.secondaryIndex = secondaryIndex
         var secondaryIndexHTable: Table? = null
         try {
@@ -42,7 +44,6 @@ class KeyValueIndexTable : Closeable {
                 secondaryIndexHTable = this.connection.getTable(secondaryIndexTableName)
             }
         } catch (e: Exception) {
-            connection.close() // Closeables.closeQuietly(connection)
             Throwables.propagate(e)
         }
 
@@ -114,7 +115,6 @@ class KeyValueIndexTable : Closeable {
         put(listOf(put))
     }
 
-
     @Throws(IOException::class)
     fun put(puts: List<Put>) {
         try {
@@ -152,7 +152,6 @@ class KeyValueIndexTable : Closeable {
 
     @Throws(IOException::class)
     override fun close() {
-        connection.close() // Closeables.closeQuietly(connection)
         try {
             transactionAwareHTable.close()
         } catch (e: IOException) {

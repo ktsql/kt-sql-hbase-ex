@@ -107,8 +107,9 @@ abstract class HBaseTable : AbstractQueryableTable {
     /**
      * 支持的索引类型
      */
-    enum class IndexType {
-        NONE, KEY_VALUE
+    enum class IndexType(s: String) {
+        NONE(""),
+        KEY_VALUE("kv")
     }
 
     /**
