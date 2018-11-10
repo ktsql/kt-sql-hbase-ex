@@ -1,6 +1,9 @@
 package me.principality.ktsql.backend.hbase
 
+import me.principality.ktsql.backend.hbase.exception.IllegalColumnNameException
+import me.principality.ktsql.backend.hbase.exception.IndexExistsException
 import mu.KotlinLogging
+import org.apache.calcite.rel.type.RelDataTypeImpl
 import org.apache.calcite.rel.type.RelProtoDataType
 import org.apache.calcite.schema.Table
 import org.apache.calcite.schema.impl.AbstractSchema
@@ -9,6 +12,15 @@ import org.apache.hadoop.hbase.HColumnDescriptor
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Connection
+import org.apache.hadoop.hbase.client.Delete
+import org.apache.hadoop.hbase.client.Put
+import org.apache.hadoop.hbase.client.Scan
+import org.apache.hadoop.hbase.filter.BinaryPrefixComparator
+import org.apache.hadoop.hbase.util.Bytes
+import java.time.LocalDateTime
+import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
+import org.apache.hadoop.hbase.filter.RowFilter
+
 
 /**
  * Calcite对表的创建有几种：
@@ -76,20 +88,69 @@ class HBaseSchema : AbstractSchema {
 
     /**
      * 实现对创建表的支持，在RelNode执行的Context中，包含了CalciteSchema，
-     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问，这两者并不一样
+     * 可以通过CalciteSchema.schema，获得HBaseSchema的访问，CalciteSchema与HBaseSchema这两者并不一样
      *
-     * 需要对RelDataType、RelProtoDataType有深入认识
+     * 需要对RelDataType、RelProtoDataType有深入认识，PrimaryKey通过InitializerExpressionFactory传过来
      *
      * 创建表的流程：
-     * 1. 在table.sys和column.sys创建对应的记录
-     * 2. 根据指定的条件创建相应的表
-     * 3. 更新上下文，表的信息登记到本地的Schema中
+     * 1. 不允许字段名为id的column
+     * 2. 在table.sys和column.sys创建对应的记录
+     * 3. 检查有没有primary key，如果没有，则需要自动添加id字段，id字段采用uuid的方式生成
+     * 4. 根据指定的条件创建相应的表
+     * 5. 更新上下文，表的信息登记到本地的Schema中
      */
     fun createTable(name: String,
                     protoStoredRowType: RelProtoDataType,
                     protoRowType: RelProtoDataType,
-                    initializerExpressionFactory: InitializerExpressionFactory): Table {
-        // 先创建表
+                    initializerExpressionFactory: InitializerExpressionFactory,
+                    keyConstraint: List<String>): Table {
+        // 检查column的名字
+        val dataType = protoRowType as RelDataTypeImpl
+        val fieldList = dataType.fieldList
+        for (rowType in fieldList) {
+            if (rowType.name.compareTo("id", true) == 0)
+                throw IllegalColumnNameException("column name should not be id")
+        }
+
+        // 在table.sys创建相应的记录
+        val put0 = Put(Bytes.toBytes(tableSystableRowkey(name)))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("tablePath"), Bytes.toBytes(name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("isTrans"), Bytes.toBytes(true.toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("indexType"), Bytes.toBytes(HBaseTable.IndexType.KEY_VALUE.name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("lockStatus"), Bytes.toBytes(HBaseTable.LockStatus.UNLOCK.name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("createTime"), Bytes.toBytes(LocalDateTime.now().toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("charset"), Bytes.toBytes(Charsets.UTF_8.toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("comment"), Bytes.toBytes(""))
+        if (keyConstraint != null) {
+            val builder = StringBuilder()
+            for (s in keyConstraint) {
+                builder.append(s)
+            }
+            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("primary"), Bytes.toBytes(builder.toString()))
+        } else {
+            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("primary"), Bytes.toBytes(HBaseTable.PrimaryType.UUID.name))
+        }
+        val systemhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_TABLE_NAME))
+        systemhtable.put(put0)
+        systemhtable.close()
+
+        // 在column.sys创建相应的记录
+        val puts = ArrayList<Put>()
+        for ((index, rowType) in fieldList.withIndex()) {
+            val put1 = Put(Bytes.toBytes(columnSystableRowkey(name, rowType.name)))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("default"), Bytes.toBytes(""))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("nullable"), Bytes.toBytes(""))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("datatype"), Bytes.toBytes(""))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("position"), Bytes.toBytes("${index}"))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("comment"), Bytes.toBytes(""))
+
+            puts.add(put1)
+        }
+        val columnhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_COLUMN_NAME))
+        columnhtable.put(puts)
+        columnhtable.close()
+
+        // 根据设定的条件创建表
         val admin = connection.admin
 
         // Instantiating table descriptor class
@@ -109,7 +170,7 @@ class HBaseSchema : AbstractSchema {
      * 删除表的流程为：
      * 1. disable表，中断连接上该表的相关连接
      * 2. 对表进行删除
-     * 3. 清除在table.sys中的相关数据
+     * 3. 清除在table.sys, column.sys中的相关数据
      * 4. 清除表所在的CalciteSchema信息
      */
     fun dropTable(name: String) {
@@ -120,22 +181,64 @@ class HBaseSchema : AbstractSchema {
             hBaseAdmin.disableTable(tableName);
             hBaseAdmin.deleteTable(tableName);
         }
+
+        val delete = Delete(Bytes.toBytes(tableSystableRowkey(name)))
+        val systemhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_TABLE_NAME))
+        systemhtable.delete(delete)
+        systemhtable.close()
+
+        val scan = Scan()
+        val rowfilter = RowFilter(CompareOp.EQUAL, BinaryPrefixComparator(Bytes.toBytes(name)))
+        scan.setFilter(rowfilter)
+        val columnhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_COLUMN_NAME))
+        val scanner = columnhtable.getScanner(scan)
+
+        val deletes = ArrayList<Delete>()
+        for (result in scanner) {
+            val del = Delete(result.row)
+            deletes.add(del)
+        }
+        columnhtable.delete(deletes)
+        columnhtable.close()
+
+        tableMap.remove(name)
     }
 
     /**
      * 创建索引的流程：
-     *
+     * 1. 检查索引是否存在
+     * 2. 创建表table.idx.index_name
+     * 3. 根据创建语句，从table中获取数据，生成对应的索引记录
+     * 4. 更新table对应的table.sys信息
      */
     fun createIndex(indexNamae: String, indexType: String, tableName: String,
                     keyList: List<String>, isAscList: List<Boolean>) {
+        val hBaseAdmin = connection.admin
+        val name = TableName.valueOf(indexTableRowkey(tableName, indexNamae, HBaseTable.IndexType.valueOf(indexType)))
 
+        if (hBaseAdmin.tableExists(name)) {
+            throw IndexExistsException("${tableName} ${indexNamae} ${indexType} exists")
+        }
+
+        val tableDescriptor = HTableDescriptor(name)
+        tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
+        hBaseAdmin.createTable(tableDescriptor)
+
+        // 生成对应的索引记录
+
+        // 更新table.sys信息，更新indexType即可，这样每次写入操作的时候即可根据indexType做索引处理
     }
 
     /**
      * 删除索引的流程：
-     *
+     * 1. 检查索引是否存在
+     * 2. 修改table.sys，变更索引状态
+     * 3. disable索引表
+     * 4. 对索引表进行删除
      */
-    fun dropIndex(name: String) {
+    fun dropIndex(tableName: String, indexName: String,
+                  indexType: HBaseTable.IndexType = HBaseTable.IndexType.KEY_VALUE) {
+
 
     }
 
@@ -167,5 +270,17 @@ class HBaseSchema : AbstractSchema {
             HBaseTable.Flavor.PROJECTFILTERABLE -> return HBaseProjectableFilterableTable(name, descriptor)
             else -> throw IllegalArgumentException("Unknown flavor " + HBaseConnection.flavor())
         }
+    }
+
+    private fun tableSystableRowkey(table: String): String {
+        return table
+    }
+
+    private fun columnSystableRowkey(table: String, column: String): String {
+        return "${table}.${column}"
+    }
+
+    private fun indexTableRowkey(table: String, index: String, indexType: HBaseTable.IndexType): String {
+        return "${table}.${indexType.name}.${index}"
     }
 }

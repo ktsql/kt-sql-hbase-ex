@@ -5,22 +5,28 @@ import org.apache.hadoop.hbase.CellUtil
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.util.Bytes
+import org.apache.tephra.TransactionContext
+import org.apache.tephra.TransactionFailureException
+import org.apache.tephra.distributed.TransactionServiceClient
+import org.apache.tephra.hbase.TransactionAwareHTable
 import java.io.Closeable
 import java.io.IOException
 import java.util.*
 
 /**
- * 二次索引实现，这是一个不包含事务的实现版本，作为早期版本测试用
+ * 二次索引实现，基于tephra保证索引和数据变更的强一致性，待依据设计进一步改进
  */
-class KeyValueIndexTable : Closeable {
-    private val sourceHTable: Table
-    private val indexHTable: Table
+class KeyValueIndexTransTable : Closeable {
+    private val transactionAwareHTable: TransactionAwareHTable
+    private val secondaryIndexTable: TransactionAwareHTable
+    private val transactionContext: TransactionContext
     private val secondaryIndexTableName: TableName
     private val connection: Connection
     private val secondaryIndex: ByteArray
 
     @Throws(IOException::class)
-    constructor(table: Table,
+    constructor(transactionServiceClient: TransactionServiceClient,
+                table: Table,
                 secondaryIndex: ByteArray,
                 indexName: String,
                 indexType: String = HBaseTable.IndexType.KEY_VALUE.name) {
@@ -39,12 +45,14 @@ class KeyValueIndexTable : Closeable {
             Throwables.propagate(e)
         }
 
-        this.sourceHTable = table
-        this.indexHTable = secondaryIndexHTable!!
+        this.transactionAwareHTable = TransactionAwareHTable(table)
+        this.secondaryIndexTable = TransactionAwareHTable(secondaryIndexHTable!!)
+        this.transactionContext = TransactionContext(transactionServiceClient, transactionAwareHTable,
+                secondaryIndexTable)
     }
 
     companion object {
-        private val secondaryIndexFamily = Bytes.toBytes("sif")
+        private val secondaryIndexFamily = Bytes.toBytes("secondaryIndexFamily")
         private val secondaryIndexQualifier = Bytes.toBytes("r")
         private val DELIMITER = byteArrayOf(0)
     }
@@ -57,19 +65,28 @@ class KeyValueIndexTable : Closeable {
     @Throws(IOException::class)
     operator fun get(gets: List<Get>): Array<Result>? {
         try {
-            val result = sourceHTable.get(gets)
+            transactionContext.start()
+            val result = transactionAwareHTable.get(gets)
+            transactionContext.finish()
             return result
         } catch (e: Exception) {
-            throw IOException("Could not rollback transaction", e)
+            try {
+                transactionContext.abort()
+            } catch (e1: TransactionFailureException) {
+                throw IOException("Could not rollback transaction", e1)
+            }
         }
+
+        return null
     }
 
     @Throws(IOException::class)
     fun getByIndex(value: ByteArray): Array<Result>? {
         try {
+            transactionContext.start()
             val scan = Scan(value, Bytes.add(value, ByteArray(0)))
             scan.addColumn(secondaryIndexFamily, secondaryIndexQualifier)
-            val indexScanner = indexHTable.getScanner(scan)
+            val indexScanner = secondaryIndexTable.getScanner(scan)
 
             val gets = ArrayList<Get>()
             for (result in indexScanner) {
@@ -77,11 +94,18 @@ class KeyValueIndexTable : Closeable {
                     gets.add(Get(CellUtil.cloneValue(cell)))
                 }
             }
-            val results = sourceHTable.get(gets)
+            val results = transactionAwareHTable.get(gets)
+            transactionContext.finish()
             return results
         } catch (e: Exception) {
-            throw IOException("Could not rollback transaction", e)
+            try {
+                transactionContext.abort()
+            } catch (e1: TransactionFailureException) {
+                throw IOException("Could not rollback transaction", e1)
+            }
         }
+
+        return null
     }
 
     @Throws(IOException::class)
@@ -92,6 +116,7 @@ class KeyValueIndexTable : Closeable {
     @Throws(IOException::class)
     fun put(puts: List<Put>) {
         try {
+            transactionContext.start()
             val secondaryIndexPuts = ArrayList<Put>()
             for (put in puts) {
                 val indexPuts = ArrayList<Put>()
@@ -111,20 +136,25 @@ class KeyValueIndexTable : Closeable {
                 }
                 secondaryIndexPuts.addAll(indexPuts)
             }
-            sourceHTable.put(puts)
-            indexHTable.put(secondaryIndexPuts)
+            transactionAwareHTable.put(puts)
+            secondaryIndexTable.put(secondaryIndexPuts)
+            transactionContext.finish()
         } catch (e: Exception) {
-            throw IOException("Could not rollback transaction", e)
+            try {
+                transactionContext.abort()
+            } catch (e1: TransactionFailureException) {
+                throw IOException("Could not rollback transaction", e1)
+            }
         }
     }
 
     @Throws(IOException::class)
     override fun close() {
         try {
-            sourceHTable.close()
+            transactionAwareHTable.close()
         } catch (e: IOException) {
             try {
-                indexHTable.close()
+                secondaryIndexTable.close()
             } catch (ex: IOException) {
                 e.addSuppressed(ex)
             }
@@ -132,6 +162,6 @@ class KeyValueIndexTable : Closeable {
             throw e
         }
 
-        indexHTable.close()
+        secondaryIndexTable.close()
     }
 }

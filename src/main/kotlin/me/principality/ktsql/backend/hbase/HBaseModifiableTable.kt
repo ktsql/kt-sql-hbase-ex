@@ -110,10 +110,9 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
          */
         override fun removeAll(elements: Collection<Any?>): Boolean {
             val deletes = ArrayList<Delete>()
-            val targets = elements as Collection<String>
+            val targets = elements as Collection<String> // fixme hack cast
             for (target in targets) {
-                val delete = Delete(Bytes.toBytes("rowkey"))
-                delete.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(target))
+                val delete = Delete(Bytes.toBytes(target))
                 deletes.add(delete)
             }
             val htable = getHTable()

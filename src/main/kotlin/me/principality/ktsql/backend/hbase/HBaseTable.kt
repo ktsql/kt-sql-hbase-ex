@@ -112,6 +112,16 @@ abstract class HBaseTable : AbstractQueryableTable {
         KEY_VALUE("kv")
     }
 
+    enum class LockStatus(s: String) {
+        LOCKED("locked"),
+        UNLOCK("unlock")
+    }
+
+    enum class PrimaryType(s: String) {
+        UUID("uuid"),
+        STRING("string")
+    }
+
     /**
      * 对表的数据读取方式进行定义，
      * - 如果是全表扫描，过滤和投影由calcite完成

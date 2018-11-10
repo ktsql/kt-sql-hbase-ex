@@ -20,9 +20,9 @@
 定义系统功能关键字如下：
 
 1. sys 表示系统表
-2. kvidx 表示KV型索引表
+2. kv 表示KV型索引表
 
-一个实现了KV型二次索引的表table，会生成一个table.kvindex.index_name的表，
+一个实现了KV型二次索引的表table，会生成一个table.kv.index_name的表，
 每一行的数据，都保存了从索引键到rowkey的对应关系
 
 ### 系统表
@@ -33,17 +33,19 @@
 table.sys的rowkey设计为：schema_path+name，包含字段：
 1. 是否为事务表
 2. 索引类型
-3. 表锁状态
+3. 表锁定状态，DDL修改时会锁定 https://ktsql.github.io/2018/11/03/分布式数据库的DDL实现/
 4. 创建时间
 5. 字符集
 6. 备注
-column.sys的rowkey设计为：schema_path+tablename+position+column_name，包含字段：
+
+column.sys的rowkey设计为：schema_path+tablename+column_name，包含字段：
 1. 默认值
 2. 字段是否为空
 3. 数据类型
-4. 最大长度
-5. 精度
-6. 备注
+4. 最大长度 <- 依赖javaType
+5. 精度 <- 同上
+6. 排序
+7. 备注
 
 主键必须在创建表时指定，否则会报错。支持多个字段组成主键。主键创建对性能影响很大，需要谨慎选择
 
