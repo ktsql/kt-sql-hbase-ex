@@ -1,8 +1,5 @@
 package me.principality.ktsql.backend.hbase
 
-import org.apache.calcite.linq4j.QueryProvider
-import org.apache.calcite.linq4j.Queryable
-import org.apache.calcite.linq4j.tree.Expression
 import org.apache.calcite.plan.Convention
 import org.apache.calcite.plan.RelOptCluster
 import org.apache.calcite.plan.RelOptTable
@@ -12,16 +9,13 @@ import org.apache.calcite.rel.core.TableModify
 import org.apache.calcite.rel.logical.LogicalTableModify
 import org.apache.calcite.rex.RexNode
 import org.apache.calcite.schema.ModifiableTable
-import org.apache.calcite.schema.SchemaPlus
-import org.apache.calcite.schema.Schemas
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.client.Delete
 import org.apache.hadoop.hbase.client.Get
 import org.apache.hadoop.hbase.client.Put
 import org.apache.hadoop.hbase.client.Row
 import org.apache.hadoop.hbase.util.Bytes
-import java.lang.reflect.Type
-import java.util.ArrayList
+import java.util.*
 
 
 /**
@@ -39,7 +33,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
      * 通过封装操作的API是可以做到的
      */
     override fun getModifiableCollection(): MutableCollection<Any?> {
-        return HBaseMutableCollection(0)
+        return HBaseMutableCollection()
     }
 
     /**
@@ -75,14 +69,14 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         }
 
         /**
-         * insert调用的是add()
+         * insert调用的是add()，参考asEnumerable.into
          * 这里要考虑好如何表达需要修改的值，需要传进来的是一行的有效数据
          */
         override fun add(element: Any?): Boolean {
             val target = element as String
             val put = Put(Bytes.toBytes("rowkey"))
             put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("rowkey"), Bytes.toBytes(target))
-            val htable = getHTable()
+            val htable = getHTable(name)
             htable.put(put)
             htable.close()
             return true
@@ -115,7 +109,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
                 val delete = Delete(Bytes.toBytes(target))
                 deletes.add(delete)
             }
-            val htable = getHTable()
+            val htable = getHTable(name)
             htable.delete(deletes)
             htable.close()
             return true

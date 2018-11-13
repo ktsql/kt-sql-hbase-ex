@@ -1,6 +1,5 @@
 package me.principality.ktsql.backend.hbase
 
-import org.apache.calcite.schema.Table
 import org.apache.hadoop.hbase.*
 import org.apache.hadoop.hbase.client.Connection
 import org.apache.hadoop.hbase.client.ConnectionFactory
@@ -51,6 +50,9 @@ object HBaseConnection {
         return connection
     }
 
+    /**
+     * 在服务器关闭的时候，完成关闭
+     */
     fun close() {
         if (isInit) {
             connection.close()
@@ -66,7 +68,7 @@ object HBaseConnection {
     }
 
     /**
-     * 确认表是否存在，如果不存在则生成
+     * 确认系统表是否存在，如果不存在则生成
      */
     private fun confirmTableExists(name: String) {
         fun confirmSystemTable() {

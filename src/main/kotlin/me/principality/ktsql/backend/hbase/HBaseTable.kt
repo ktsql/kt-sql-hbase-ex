@@ -11,8 +11,11 @@ import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.util.Pair
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.Get
 import org.apache.hadoop.hbase.client.ResultScanner
 import org.apache.hadoop.hbase.client.Table
+import org.apache.hadoop.hbase.util.Bytes
+import java.nio.charset.Charset
 import java.util.*
 
 /**
@@ -51,7 +54,8 @@ abstract class HBaseTable : AbstractQueryableTable {
     protected val name: String
     protected val htableDescriptor: HTableDescriptor
     protected val isTransactional: Boolean // 默认为真，可以手动指明非真，用于快速插入数据
-    protected val indexType: IndexType = IndexType.NONE // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
+    protected val indexType: IndexType // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
+    protected val secondaryIndexTable: KeyValueIndexTable?
 
     companion object {
         val columnFamily: String = "cf"
@@ -61,13 +65,26 @@ abstract class HBaseTable : AbstractQueryableTable {
     constructor(name: String, descriptor: HTableDescriptor) : super(Array<Any>::class.java) {
         this.name = name
         this.htableDescriptor = descriptor
-        this.isTransactional = true
+
+        // 下面开始做一些变量的初始化：
+        // 1. 是否为事务表
+        isTransactional = getTableSystemAttribute(name, HBaseTable.SystemAttribute.IS_TRANSACTIONAL.name).toString().toBoolean()
+        // 2. 索引的类型
+        val typeAttr = getTableSystemAttribute(name, HBaseTable.SystemAttribute.INDEX_TYPE.name)
+        val typeStr = String(typeAttr, Charset.forName("UTF-8"))
+        indexType = HBaseTable.IndexType.valueOf(typeStr)
+        if (indexType == HBaseTable.IndexType.KEY_VALUE) {
+            // todo 完成索引表的初始化
+            secondaryIndexTable = null
+        } else {
+            secondaryIndexTable = null
+        }
     }
 
     override fun <T : Any?> asQueryable(queryProvider: QueryProvider?,
                                         schema: SchemaPlus?,
                                         tableName: String?): Queryable<T> {
-        throw NotImplementedError("No need to implement")
+        throw NotImplementedError("Need to be implemented")
     }
 
     /**
@@ -76,7 +93,7 @@ abstract class HBaseTable : AbstractQueryableTable {
      * 可以通过hbase的表接口获得该信息，需要注意的是：
      * 如何实现从不同数据源数据类型映射/转换到Calcite数据类型的逻辑？只能通过元数据表
      *
-     * HBase的column是不区分类型的
+     * HBase的column是不区分类型的，只能从系统表读取
      */
     override fun getRowType(typeFactory: RelDataTypeFactory?): RelDataType {
         if (typeFactory == null) {
@@ -100,15 +117,23 @@ abstract class HBaseTable : AbstractQueryableTable {
         return typeFactory.createStructType(Pair.zip(names, types))
     }
 
-    internal fun getHTable(): Table {
+    internal fun getHTable(name: String): Table {
         return HBaseConnection.connection().getTable(TableName.valueOf(name))
+    }
+
+    private fun getTableSystemAttribute(tableName: String, attribute: String): ByteArray {
+        val get = Get(Bytes.toBytes(tableName))
+        val systemhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_TABLE_NAME))
+
+        val dbresult = systemhtable.get(get)
+        return dbresult.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(attribute))
     }
 
     /**
      * 支持的索引类型
      */
     enum class IndexType(s: String) {
-        NONE(""),
+        NONE("none"),
         KEY_VALUE("kv")
     }
 
@@ -132,6 +157,28 @@ abstract class HBaseTable : AbstractQueryableTable {
      */
     enum class Flavor {
         SCANNABLE, FILTERABLE, PROJECTFILTERABLE
+    }
+
+    enum class SystemAttribute(s: String) {
+        TABLE_PATH("tablePath"),
+        IS_TRANSACTIONAL("isTrans"),
+        INDEX_TYPE("indexType"),
+        LOCK_STATUS("lockStatus"),
+        CREATE_TIME("createTime"),
+        CHARSET("charset"),
+        COMMENT("comment"),
+        PRIMARY("primary"),
+        INDEX("index")
+    }
+
+    enum class ColumnAttribute(s: String) {
+        DEFAULT("default"),
+        NULLABLE("nullable"),
+        DATA_TYPE("datatype"),
+        MAX_LENGTH("maxlen"),
+        PRECISION("precsion"),
+        POSITION("position"),
+        COMMENT("comment")
     }
 
     class SqlEnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {

@@ -1,25 +1,24 @@
 package me.principality.ktsql.backend.hbase
 
+import me.principality.ktsql.backend.hbase.HBaseUtils.SYSTEM_COLUMN_NAME
+import me.principality.ktsql.backend.hbase.HBaseUtils.SYSTEM_TABLE_NAME
 import me.principality.ktsql.backend.hbase.exception.IllegalColumnNameException
 import me.principality.ktsql.backend.hbase.exception.IndexExistsException
+import me.principality.ktsql.backend.hbase.exception.PrimaryKeyMissedException
 import mu.KotlinLogging
+import org.apache.calcite.jdbc.JavaTypeFactoryImpl
 import org.apache.calcite.rel.type.RelDataTypeImpl
 import org.apache.calcite.rel.type.RelProtoDataType
+import org.apache.calcite.schema.ColumnStrategy
 import org.apache.calcite.schema.Table
 import org.apache.calcite.schema.impl.AbstractSchema
 import org.apache.calcite.sql2rel.InitializerExpressionFactory
 import org.apache.hadoop.hbase.HColumnDescriptor
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.Connection
-import org.apache.hadoop.hbase.client.Delete
-import org.apache.hadoop.hbase.client.Put
-import org.apache.hadoop.hbase.client.Scan
-import org.apache.hadoop.hbase.filter.BinaryPrefixComparator
+import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.util.Bytes
 import java.time.LocalDateTime
-import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp
-import org.apache.hadoop.hbase.filter.RowFilter
 
 
 /**
@@ -103,9 +102,12 @@ class HBaseSchema : AbstractSchema {
                     protoStoredRowType: RelProtoDataType,
                     protoRowType: RelProtoDataType,
                     initializerExpressionFactory: InitializerExpressionFactory,
-                    keyConstraint: List<String>): Table {
+                    keyConstraint: List<String>?,
+                    defaultValues: Map<String, Any?>): Table {
+        val typeFactory = JavaTypeFactoryImpl()
+
         // 检查column的名字
-        val dataType = protoRowType as RelDataTypeImpl
+        val dataType = protoRowType.apply(typeFactory)
         val fieldList = dataType.fieldList
         for (rowType in fieldList) {
             if (rowType.name.compareTo("id", true) == 0)
@@ -114,35 +116,43 @@ class HBaseSchema : AbstractSchema {
 
         // 在table.sys创建相应的记录
         val put0 = Put(Bytes.toBytes(tableSystableRowkey(name)))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("tablePath"), Bytes.toBytes(name))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("isTrans"), Bytes.toBytes(true.toString()))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("indexType"), Bytes.toBytes(HBaseTable.IndexType.KEY_VALUE.name))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("lockStatus"), Bytes.toBytes(HBaseTable.LockStatus.UNLOCK.name))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("createTime"), Bytes.toBytes(LocalDateTime.now().toString()))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("charset"), Bytes.toBytes(Charsets.UTF_8.toString()))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("comment"), Bytes.toBytes(""))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.TABLE_PATH.name), Bytes.toBytes(name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.IS_TRANSACTIONAL.name), Bytes.toBytes(false.toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.INDEX_TYPE.name), Bytes.toBytes(HBaseTable.IndexType.NONE.name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.LOCK_STATUS.name), Bytes.toBytes(HBaseTable.LockStatus.UNLOCK.name))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.CREATE_TIME.name), Bytes.toBytes(LocalDateTime.now().toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.CHARSET.name), Bytes.toBytes(Charsets.UTF_8.toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.COMMENT.name), Bytes.toBytes(""))
         if (keyConstraint != null) {
             val builder = StringBuilder()
             for (s in keyConstraint) {
                 builder.append(s)
             }
-            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("primary"), Bytes.toBytes(builder.toString()))
+            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.PRIMARY.name), Bytes.toBytes(builder.toString()))
         } else {
-            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("primary"), Bytes.toBytes(HBaseTable.PrimaryType.UUID.name))
+            throw PrimaryKeyMissedException("no primary key")
+//            put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.PRIMARY.name), Bytes.toBytes(HBaseTable.PrimaryType.UUID.name))
         }
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.INDEX.name), Bytes.toBytes(""))
         val systemhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_TABLE_NAME))
         systemhtable.put(put0)
         systemhtable.close()
 
-        // 在column.sys创建相应的记录
+        // 在column.sys创建相应的记录, fixme
         val puts = ArrayList<Put>()
         for ((index, rowType) in fieldList.withIndex()) {
             val put1 = Put(Bytes.toBytes(columnSystableRowkey(name, rowType.name)))
-            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("default"), Bytes.toBytes(""))
-            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("nullable"), Bytes.toBytes(""))
-            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("datatype"), Bytes.toBytes(""))
-            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("position"), Bytes.toBytes("${index}"))
-            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("comment"), Bytes.toBytes(""))
+            if (initializerExpressionFactory.generationStrategy(null, index) == ColumnStrategy.DEFAULT) {
+                val defaultValue = defaultValues.get(rowType.name)
+                put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DEFAULT.name), Bytes.toBytes(defaultValue.toString()))
+            } else {
+                put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DEFAULT.name), Bytes.toBytes(null.toString()))
+            }
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.NULLABLE.name), Bytes.toBytes(rowType.value.isNullable))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DATA_TYPE.name), Bytes.toBytes(rowType.value.sqlTypeName.toString()))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.PRECISION.name), Bytes.toBytes(rowType.value.precision.toString()))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.POSITION.name), Bytes.toBytes("${index}"))
+            put1.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.COMMENT.name), Bytes.toBytes(""))
 
             puts.add(put1)
         }
@@ -187,9 +197,10 @@ class HBaseSchema : AbstractSchema {
         systemhtable.delete(delete)
         systemhtable.close()
 
+        // https://blog.csdn.net/tom_fans/article/details/73937578
+        // 如果要对rowkey进行过滤，有两种方法，一种是scan1.setFilter(rowfilter)，一种是scan.setRowPrefixFilter
         val scan = Scan()
-        val rowfilter = RowFilter(CompareOp.EQUAL, BinaryPrefixComparator(Bytes.toBytes(name)))
-        scan.setFilter(rowfilter)
+        scan.setRowPrefixFilter(Bytes.toBytes(name))
         val columnhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_COLUMN_NAME))
         val scanner = columnhtable.getScanner(scan)
 
@@ -211,22 +222,43 @@ class HBaseSchema : AbstractSchema {
      * 3. 根据创建语句，从table中获取数据，生成对应的索引记录
      * 4. 更新table对应的table.sys信息
      */
-    fun createIndex(indexNamae: String, indexType: String, tableName: String,
+    fun createIndex(indexName: String, indexType: String, tableName: String,
                     keyList: List<String>, isAscList: List<Boolean>) {
         val hBaseAdmin = connection.admin
-        val name = TableName.valueOf(indexTableRowkey(tableName, indexNamae, HBaseTable.IndexType.valueOf(indexType)))
+        val indexTableName = TableName.valueOf(indexTableRowkey(tableName, indexName, HBaseTable.IndexType.valueOf(indexType)))
 
-        if (hBaseAdmin.tableExists(name)) {
-            throw IndexExistsException("${tableName} ${indexNamae} ${indexType} exists")
+        if (hBaseAdmin.tableExists(indexTableName)) {
+            throw IndexExistsException("${tableName} ${indexName} ${indexType} exists when create index")
         }
 
-        val tableDescriptor = HTableDescriptor(name)
+        val tableDescriptor = HTableDescriptor(indexTableName)
         tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
         hBaseAdmin.createTable(tableDescriptor)
 
         // 生成对应的索引记录
+        val scan = Scan()
+        val sourceTable = HBaseConnection.connection().getTable(TableName.valueOf(tableName))
+        val scanner = sourceTable.getScanner(scan)
+        val indexTable = HBaseConnection.connection().getTable(indexTableName)
+        for (result in scanner) {
+            val rowkey = result.row
+            val indexkey = StringBuilder()
+            for (key in keyList) {
+                indexkey.append(result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(key)))
+            }
+            val put = Put(Bytes.toBytes(indexkey.toString()))
+            put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("rowkey"), rowkey)
+            indexTable.put(put) // 这里考虑有很多条记录的时候，全部读到内存中建立记录再写入，就会有性能问题，todo 考虑分页优化
+        }
 
         // 更新table.sys信息，更新indexType即可，这样每次写入操作的时候即可根据indexType做索引处理
+        updateSystableAttribute(tableName, HBaseTable.SystemAttribute.INDEX_TYPE.name, HBaseTable.IndexType.KEY_VALUE.name)
+        val index = StringBuilder()
+        for (key in keyList) {
+            index.append(key)
+            index.append(",")
+        }
+        updateSystableAttribute(tableName, HBaseTable.SystemAttribute.INDEX.name, index.toString())
     }
 
     /**
@@ -238,8 +270,20 @@ class HBaseSchema : AbstractSchema {
      */
     fun dropIndex(tableName: String, indexName: String,
                   indexType: HBaseTable.IndexType = HBaseTable.IndexType.KEY_VALUE) {
+        val hBaseAdmin = connection.admin
+        val indexTableName = TableName.valueOf(indexTableRowkey(tableName, indexName, indexType))
 
+        if (!hBaseAdmin.tableExists(indexTableName)) {
+            throw IndexExistsException("${tableName} ${indexName} ${indexType} not exists when drop index")
+        }
 
+        // 更新table.sys
+        updateSystableAttribute(tableName, HBaseTable.SystemAttribute.INDEX_TYPE.name, HBaseTable.IndexType.NONE.name)
+        updateSystableAttribute(tableName, HBaseTable.SystemAttribute.INDEX.name, "")
+
+        // disable, delete
+        hBaseAdmin.disableTable(indexTableName);
+        hBaseAdmin.deleteTable(indexTableName);
     }
 
     /**
@@ -254,8 +298,11 @@ class HBaseSchema : AbstractSchema {
         }
 
         val builder = HashMap<String, Table>()
-        for (descriptor in tables) {
+        loop@ for (descriptor in tables) {
             val source = descriptor.nameAsString
+            when (source) {
+                SYSTEM_TABLE_NAME, SYSTEM_COLUMN_NAME -> continue@loop
+            }
             val table = createTable(source, descriptor)
             builder.put(source, table)
         }
@@ -282,5 +329,18 @@ class HBaseSchema : AbstractSchema {
 
     private fun indexTableRowkey(table: String, index: String, indexType: HBaseTable.IndexType): String {
         return "${table}.${indexType.name}.${index}"
+    }
+
+    private fun updateSystableAttribute(tableName: String, attribute: String, newValue: String) {
+        val get = Get(Bytes.toBytes(tableName))
+        val systemhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_TABLE_NAME))
+
+        val dbresult = systemhtable.get(get)
+        val rowkey = dbresult.row
+
+        val put = Put(rowkey)
+        put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(attribute), Bytes.toBytes(newValue))
+        systemhtable.put(put)
+        systemhtable.close()
     }
 }
