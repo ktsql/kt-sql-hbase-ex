@@ -134,6 +134,9 @@ abstract class HBaseTable : AbstractQueryableTable {
      * 这里的排序，需要根据创建表的次序来排
      */
     private fun getTableColumns(tableName: String): List<ColumnType> {
+        val primaryAttribute = getTableSystemAttribute(tableName, HBaseTable.SystemAttribute.PRIMARY.name)
+        val primaryKey = primaryAttribute.toString(Charset.forName("UTF-8"))
+
         val scan = Scan()
         scan.setRowPrefixFilter(Bytes.toBytes(name))
         val columnhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_COLUMN_NAME))
@@ -145,11 +148,17 @@ abstract class HBaseTable : AbstractQueryableTable {
             val type = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DATA_TYPE.name))
             val precision = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.PRECISION.name))
             val position = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.POSITION.name))
+            val isNullable = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.NULLABLE.name))
+            val defaultValue = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DEFAULT.name))
 
-            val columnType = ColumnType(splitColumnRowkey(name.toString(Charset.forName("UTF-8"))),
+            val rowname = splitColumnRowkey(name.toString(Charset.forName("UTF-8")))
+            val columnType = ColumnType(rowname,
                     type.toString(Charset.forName("UTF-8")),
                     precision.toString(Charset.forName("UTF-8")).toInt(),
-                    position.toString(Charset.forName("UTF-8")).toInt())
+                    position.toString(Charset.forName("UTF-8")).toInt(),
+                    rowname.equals(primaryKey),
+                    isNullable.toString().toBoolean(),
+                    defaultValue.toString(Charset.forName("UTF-8")))
 
             array.add(columnType)
         }
@@ -160,7 +169,13 @@ abstract class HBaseTable : AbstractQueryableTable {
         return s.split(".").get(1) // 这里和schema的columnSystableRowkey一一对应
     }
 
-    protected data class ColumnType(val name: String, val type: String, val precision: Int, val position: Int)
+    protected data class ColumnType(val name: String,
+                                    val type: String,
+                                    val precision: Int,
+                                    val position: Int,
+                                    val isPrimary: Boolean,
+                                    val isNullable: Boolean,
+                                    val defaultValue: String)
 
     /**
      * 支持的索引类型

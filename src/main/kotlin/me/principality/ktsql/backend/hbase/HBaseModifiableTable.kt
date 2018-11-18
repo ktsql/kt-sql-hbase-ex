@@ -1,5 +1,6 @@
 package me.principality.ktsql.backend.hbase
 
+import org.apache.calcite.jdbc.JavaTypeFactoryImpl
 import org.apache.calcite.linq4j.tree.Expression
 import org.apache.calcite.plan.Convention
 import org.apache.calcite.plan.RelOptCluster
@@ -12,6 +13,7 @@ import org.apache.calcite.rex.RexNode
 import org.apache.calcite.schema.ModifiableTable
 import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.schema.Schemas
+import org.apache.calcite.sql.type.SqlTypeName
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.client.Delete
 import org.apache.hadoop.hbase.client.Get
@@ -98,19 +100,50 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
 
         /**
          * insert调用的是add()，参考asEnumerable.into
-         * 这里要考虑好如何表达需要修改的值，需要传进来的是一行的有效数据
-         * 如果是按顺序排序的话，还需要从原程读一次元数据，以便对插入的顺序进行处理
+         * 这里要考虑好如何表达需要修改的值，需要传进来的是一行的有效数据，按顺序排序
+         * 如果需要判断主键(rowkey)是否重复，还需要从远程读一次元数据，以便对插入的数据进行检查
+         *
+         * todo 需要对默认值、是否为空进行判断？
          *
          * 数据在插入前做了格式和值的对应检查，参考validateInsert
          */
         override fun add(element: Any?): Boolean {
-            val target = element as String
-            val put = Put(Bytes.toBytes("rowkey"))
-            put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes("rowkey"), Bytes.toBytes(target))
-            val htable = getHTable(name)
-            htable.put(put)
-            htable.close()
-            return true
+            val values = element as Array<Any>
+
+            for ((index, columnDef) in columnDescriptors.withIndex()) {
+                if (columnDef.isPrimary) {
+                    val rowkey = values.get(index).toString()
+                    val put = Put(Bytes.toBytes(rowkey))
+
+                    // todo 使用typeFactory对col进行处理？
+//                    val typeFactory = JavaTypeFactoryImpl()
+                    for ((idx, col) in values.withIndex()) {
+//                        val dataType = typeFactory.createSqlType(SqlTypeName.get(columnDescriptors.get(idx).type))
+//                        val javaType = typeFactory.getJavaClass(dataType)
+                        if (idx != index) {
+                            val target = values.get(idx).toString()
+                            put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(columnDescriptors.get(idx).name), Bytes.toBytes(target))
+                        }
+//                        when (col.type) {
+//                            "INTEGER" -> {
+//                                target = col as String
+//                                put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(rowkey), Bytes.toBytes(target))
+//                            }
+//                            "VARCHAR" -> {
+//                                target = col as String
+//                                put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(rowkey), Bytes.toBytes(target))
+//                            }
+//                            else -> target = null
+//                        }
+                    }
+
+                    val htable = getHTable(name)
+                    htable.put(put)
+                    htable.close()
+                    return true
+                }
+            }
+            return false
         }
 
         override fun addAll(elements: Collection<Any?>): Boolean {
