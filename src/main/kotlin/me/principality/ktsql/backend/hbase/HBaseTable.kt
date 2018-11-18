@@ -8,11 +8,13 @@ import org.apache.calcite.linq4j.Queryable
 import org.apache.calcite.rel.type.RelDataType
 import org.apache.calcite.rel.type.RelDataTypeFactory
 import org.apache.calcite.schema.SchemaPlus
+import org.apache.calcite.sql.type.SqlTypeName
 import org.apache.calcite.util.Pair
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Get
 import org.apache.hadoop.hbase.client.ResultScanner
+import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.client.Table
 import org.apache.hadoop.hbase.util.Bytes
 import java.nio.charset.Charset
@@ -56,6 +58,7 @@ abstract class HBaseTable : AbstractQueryableTable {
     protected val isTransactional: Boolean // 默认为真，可以手动指明非真，用于快速插入数据
     protected val indexType: IndexType // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
     protected val secondaryIndexTable: KeyValueIndexTable?
+    protected val columnDescriptors: List<ColumnType>
 
     companion object {
         val columnFamily: String = "cf"
@@ -65,6 +68,7 @@ abstract class HBaseTable : AbstractQueryableTable {
     constructor(name: String, descriptor: HTableDescriptor) : super(Array<Any>::class.java) {
         this.name = name
         this.htableDescriptor = descriptor
+        this.columnDescriptors = getTableColumns(this.name)
 
         // 下面开始做一些变量的初始化：
         // 1. 是否为事务表
@@ -75,7 +79,7 @@ abstract class HBaseTable : AbstractQueryableTable {
         indexType = HBaseTable.IndexType.valueOf(typeStr)
         if (indexType == HBaseTable.IndexType.KEY_VALUE) {
             // todo 完成索引表的初始化
-            secondaryIndexTable = null
+            throw NotImplementedError("create index table helper")
         } else {
             secondaryIndexTable = null
         }
@@ -103,14 +107,11 @@ abstract class HBaseTable : AbstractQueryableTable {
         val types = ArrayList<RelDataType>()
         val names = ArrayList<String>()
 
-        // 遍历获得每一个column的类型，借助HColumnDescriptor
-        val columnDescriptors = htableDescriptor.getColumnFamilies()
-
+        // 遍历获得每一个column的类型
         for (column in columnDescriptors) {
-            val javaType = typeFactory.createJavaType(String::class.java)
-            val sqlType = typeFactory.createSqlType(javaType.sqlTypeName)
+            val sqlType = typeFactory.createSqlType(SqlTypeName.get(column.type))
 
-            names.add(column.nameAsString)
+            names.add(column.name)
             types.add(sqlType)
         }
 
@@ -128,6 +129,38 @@ abstract class HBaseTable : AbstractQueryableTable {
         val dbresult = systemhtable.get(get)
         return dbresult.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(attribute))
     }
+
+    /**
+     * 这里的排序，需要根据创建表的次序来排
+     */
+    private fun getTableColumns(tableName: String): List<ColumnType> {
+        val scan = Scan()
+        scan.setRowPrefixFilter(Bytes.toBytes(name))
+        val columnhtable = HBaseConnection.connection().getTable(TableName.valueOf(HBaseUtils.SYSTEM_COLUMN_NAME))
+        val scanner = columnhtable.getScanner(scan)
+
+        val array = ArrayList<ColumnType>()
+        for (result in scanner) {
+            val name = result.row
+            val type = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.DATA_TYPE.name))
+            val precision = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.PRECISION.name))
+            val position = result.getValue(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.ColumnAttribute.POSITION.name))
+
+            val columnType = ColumnType(splitColumnRowkey(name.toString(Charset.forName("UTF-8"))),
+                    type.toString(Charset.forName("UTF-8")),
+                    precision.toString(Charset.forName("UTF-8")).toInt(),
+                    position.toString(Charset.forName("UTF-8")).toInt())
+
+            array.add(columnType)
+        }
+        return array.sortedBy { it.position }
+    }
+
+    private fun splitColumnRowkey(s: String): String {
+        return s.split(".").get(1) // 这里和schema的columnSystableRowkey一一对应
+    }
+
+    protected data class ColumnType(val name: String, val type: String, val precision: Int, val position: Int)
 
     /**
      * 支持的索引类型
