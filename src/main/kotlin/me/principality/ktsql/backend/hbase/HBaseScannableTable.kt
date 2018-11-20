@@ -36,23 +36,4 @@ class HBaseScannableTable(name: String, descriptor: HTableDescriptor) :
             }
         }
     }
-
-    private fun scan(): Enumerable<Array<Any>> {
-        val connection = HBaseConnection.connection()
-        val htable = connection.getTable(TableName.valueOf(name))
-
-        val scan = Scan()
-        var rs: ResultScanner? = null
-        try {
-            rs = htable.getScanner(scan)
-            val array = Array<Any>(rs.count(), {})
-            for ((k, v) in rs!!.withIndex()) {
-                array.set(k, v)
-            }
-            return SqlEnumerableImpl<Array<Any>>(rs)
-        } finally {
-            rs!!.close()
-            htable.close()
-        }
-    }
 }

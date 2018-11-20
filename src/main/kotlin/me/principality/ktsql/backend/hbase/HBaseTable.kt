@@ -231,7 +231,7 @@ abstract class HBaseTable : AbstractQueryableTable {
 
     class SqlEnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {
         private val results: List<T> = rs.toList()
-        private var index: Int = 0
+        private var index: Int = -1
 
         override fun moveNext(): Boolean {
             if (index < results.size) {
@@ -246,7 +246,7 @@ abstract class HBaseTable : AbstractQueryableTable {
         }
 
         override fun reset() {
-            index = 0
+            index = -1
         }
 
         override fun close() {

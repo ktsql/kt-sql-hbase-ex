@@ -5,6 +5,9 @@ import org.apache.calcite.linq4j.Enumerable
 import org.apache.calcite.rex.RexNode
 import org.apache.calcite.schema.ProjectableFilterableTable
 import org.apache.hadoop.hbase.HTableDescriptor
+import org.apache.hadoop.hbase.client.Scan
+import org.apache.hadoop.hbase.filter.FilterList
+import org.apache.hadoop.hbase.util.Bytes
 
 class HBaseProjectableFilterableTable(name: String, descriptor: HTableDescriptor) :
         HBaseModifiableTable(name, descriptor), ProjectableFilterableTable {
@@ -12,24 +15,28 @@ class HBaseProjectableFilterableTable(name: String, descriptor: HTableDescriptor
     override fun scan(root: DataContext?,
                       filters: MutableList<RexNode>?,
                       projects: IntArray?): Enumerable<Array<Any>> {
-        TODO("not implemented")
+        if (filters != null) {
+            val htable = getHTable(this.name)
+            val scan = Scan()
+            val filterList = FilterList(FilterList.Operator.MUST_PASS_ALL)
 
-        /*
-        SingleColumnValueFilter filter = new SingleColumnValueFilter(
-                Bytes.toBytes("salary"),
-                Bytes.toBytes("gross"),
-                CompareOp.GREATER,
-                Bytes.toBytes("1500")
-        );
+            for (filter in filters) {
+                val f = translateMatch2(filter)
+                filterList.addFilter(f)
+            }
 
-        //To prevent the entire row from being emitted
-        //if the column is not found on a row
-        scan.setFilterIfMissing(true)
-        scan.setFilter(filter);
+            if (projects != null) {
+                for (project in projects) {
+                    val name = this.columnDescriptors.get(project).name
+                    scan.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(name)) // 选择特定列
+                }
+            }
 
-        scan.addFamily(Bytes.toBytes("ename"))
-        scan.addColumn(Bytes.toBytes("salary"), Bytes.toBytes("da"))
-        scan.addColumn(Bytes.toBytes("salary"), Bytes.toBytes("gross"))
-        */
+            scan.setFilter(filterList)
+            val rs = htable.getScanner(scan)
+            return SqlEnumerableImpl<Array<Any>>(rs)
+        } else {
+            return scan()
+        }
     }
 }

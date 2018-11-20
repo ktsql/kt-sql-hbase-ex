@@ -1,6 +1,7 @@
 package me.principality.ktsql.backend.hbase
 
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl
+import org.apache.calcite.linq4j.Enumerable
 import org.apache.calcite.linq4j.tree.Expression
 import org.apache.calcite.plan.Convention
 import org.apache.calcite.plan.RelOptCluster
@@ -9,16 +10,19 @@ import org.apache.calcite.prepare.Prepare
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.core.TableModify
 import org.apache.calcite.rel.logical.LogicalTableModify
+import org.apache.calcite.rex.RexCall
+import org.apache.calcite.rex.RexInputRef
+import org.apache.calcite.rex.RexLiteral
 import org.apache.calcite.rex.RexNode
 import org.apache.calcite.schema.ModifiableTable
 import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.schema.Schemas
+import org.apache.calcite.sql.SqlKind
 import org.apache.calcite.sql.type.SqlTypeName
 import org.apache.hadoop.hbase.HTableDescriptor
-import org.apache.hadoop.hbase.client.Delete
-import org.apache.hadoop.hbase.client.Get
-import org.apache.hadoop.hbase.client.Put
-import org.apache.hadoop.hbase.client.Row
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.client.*
+import org.apache.hadoop.hbase.filter.*
 import org.apache.hadoop.hbase.util.Bytes
 import java.util.*
 
@@ -163,6 +167,10 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         }
 
         /**
+         * hbase是以rowkey，column，timestamp这三个维度来区分的，
+         * 传进来的Any?应可描述rowkey, column, timestamp
+         * 在timestamp不暴露的前提下，依赖rowkey和column对数据进行定位
+         *
          * delete调用的是removeAll操作
          * removeAll是通过rowkey的方式来表达，还是通过范围处理来表达？
          */
@@ -190,5 +198,106 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         private fun convert(collection: Collection<Any?>): Get {
             TODO()
         }
+    }
+
+    /**
+     * 为子类提供扫描全表的实现
+     */
+    protected fun scan(): Enumerable<Array<Any>> {
+        val connection = HBaseConnection.connection()
+        val htable = connection.getTable(TableName.valueOf(name))
+
+        val scan = Scan()
+        var rs: ResultScanner? = null
+        try {
+            rs = htable.getScanner(scan)
+            return SqlEnumerableImpl<Array<Any>>(rs)
+        } finally {
+            rs!!.close()
+            htable.close()
+        }
+    }
+
+    /**
+     * 支持 =, <, >, >=, <=，如 op > rop，其中op用$2表示是表中columndef.get(2)，
+     * 也可以用op.index返回所对应的column
+     */
+    protected fun translateMatch2(node: RexNode): Filter {
+        when (node.kind) {
+            SqlKind.EQUALS -> return translateBinary("=", "=", node as RexCall)
+            SqlKind.LESS_THAN -> return translateBinary("<", ">", node as RexCall)
+            SqlKind.LESS_THAN_OR_EQUAL -> return translateBinary("<=", ">=", node as RexCall)
+            SqlKind.GREATER_THAN -> return translateBinary(">", "<", node as RexCall)
+            SqlKind.GREATER_THAN_OR_EQUAL -> return translateBinary(">=", "<=", node as RexCall)
+            else -> throw AssertionError("cannot translate $node")
+        }
+    }
+
+    protected fun translateBinary(op: String, rop: String, call: RexCall): Filter {
+        val left = call.operands[0]
+        val right = call.operands[1]
+        var expression = translateBinary2(op, left, right)
+        if (expression != null) {
+            return expression
+        }
+        expression = translateBinary2(rop, right, left)
+        if (expression != null) {
+            return expression
+        }
+        throw AssertionError("cannot translate op $op call $call")
+    }
+
+    /**
+     * 这里对输入值进行检查并转换
+     */
+    protected fun translateBinary2(op: String, left: RexNode, right: RexNode): Filter? {
+        if (right.kind != SqlKind.LITERAL) {
+            return null
+        }
+        val rightLiteral = right as RexLiteral
+
+        when (left.kind) {
+            SqlKind.INPUT_REF -> {
+                val leftRef = left as RexInputRef
+                return translateOp2(op, leftRef, rightLiteral)
+            }
+            SqlKind.CAST ->
+                return translateBinary2(op, (left as RexCall).operands[0], right)
+            else -> return null
+        }
+    }
+
+    /**
+     * 最后的filter在这里产生
+     */
+    protected fun translateOp2(op: String, leftRef: RexInputRef, right: RexLiteral): Filter? {
+        val compareOp: CompareFilter.CompareOp
+        when (op) {
+            "=" -> compareOp = CompareFilter.CompareOp.EQUAL
+            ">" -> compareOp = CompareFilter.CompareOp.GREATER
+            "<" -> compareOp = CompareFilter.CompareOp.LESS
+            ">=" -> compareOp = CompareFilter.CompareOp.GREATER_OR_EQUAL
+            "<=" -> compareOp = CompareFilter.CompareOp.LESS_OR_EQUAL
+            else ->
+                return null
+        }
+
+        val value = literalValue(right)
+
+        // 主键，用rowfilter，否则用SingleColumnValueFilter
+        if (this.columnDescriptors.get(leftRef.index).isPrimary) {
+            return RowFilter(compareOp, BinaryComparator(Bytes.toBytes(value)))
+        } else {
+            return SingleColumnValueFilter(Bytes.toBytes(columnFamily),//列族
+                    Bytes.toBytes(this.columnDescriptors.get(leftRef.index).name),  //列名
+                    compareOp, Bytes.toBytes(value))
+        }
+    }
+
+    private fun literalValue(literal: RexLiteral): String {
+        val value = literal.value2
+        val buf = StringBuilder()
+        buf.append(value)
+        return buf.toString()
     }
 }
