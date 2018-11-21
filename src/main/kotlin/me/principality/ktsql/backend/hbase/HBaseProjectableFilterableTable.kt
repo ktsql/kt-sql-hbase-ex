@@ -34,7 +34,7 @@ class HBaseProjectableFilterableTable(name: String, descriptor: HTableDescriptor
 
             scan.setFilter(filterList)
             val rs = htable.getScanner(scan)
-            return SqlEnumerableImpl<Array<Any>>(rs)
+            return SqlEnumerableImpl(rs)
         } else {
             return scan()
         }

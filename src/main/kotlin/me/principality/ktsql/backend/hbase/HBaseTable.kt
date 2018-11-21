@@ -10,12 +10,10 @@ import org.apache.calcite.rel.type.RelDataTypeFactory
 import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.sql.type.SqlTypeName
 import org.apache.calcite.util.Pair
+import org.apache.hadoop.hbase.CellUtil
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
-import org.apache.hadoop.hbase.client.Get
-import org.apache.hadoop.hbase.client.ResultScanner
-import org.apache.hadoop.hbase.client.Scan
-import org.apache.hadoop.hbase.client.Table
+import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.util.Bytes
 import java.nio.charset.Charset
 import java.util.*
@@ -229,9 +227,10 @@ abstract class HBaseTable : AbstractQueryableTable {
         COMMENT("comment")
     }
 
-    class SqlEnumeratorImpl<T>(rs: Iterable<T>) : Enumerator<T> {
-        private val results: List<T> = rs.toList()
-        private var index: Int = -1
+    inner class SqlEnumeratorImpl<T>(rs: ResultScanner) : Enumerator<Array<Any>> {
+        private val resultScanner = rs
+        private val results: List<Result> = rs.toList()
+        private var index = -1
 
         override fun moveNext(): Boolean {
             if (index < results.size) {
@@ -241,8 +240,24 @@ abstract class HBaseTable : AbstractQueryableTable {
             return false
         }
 
-        override fun current(): T {
-            return results.get(index)
+        override fun current(): Array<Any> {
+            val result = results.get(index)
+            val retArr = Array<Any>(columnDescriptors.size, {})
+
+            for (colDef in columnDescriptors) {
+                if (colDef.isPrimary) {
+                    retArr.set(colDef.position, byteToAny(colDef.type, result.row))
+                } else {
+                    for ((i, cell) in result.rawCells().withIndex()) {
+                        if ((Bytes.toString(CellUtil.cloneQualifier(cell))).equals(colDef.name)) {
+                            retArr.set(colDef.position, byteToAny(colDef.type, CellUtil.cloneValue(cell)))
+                            break
+                        }
+                    }
+                }
+            }
+
+            return retArr
         }
 
         override fun reset() {
@@ -250,15 +265,53 @@ abstract class HBaseTable : AbstractQueryableTable {
         }
 
         override fun close() {
-            // 不需要
+            resultScanner.close()
+        }
+
+        private fun byteToAny(type: String, value: ByteArray): Any {
+            when (type) {
+                "DATE", "TIME", "TIME_WITH_LOCAL_TIME_ZONE",
+                "INTEGER", "INTERVAL_YEAR", "INTERVAL_YEAR_MONTH", "INTERVAL_MONTH" -> {
+                    return Bytes.toInt(value)
+                }
+                "VARCHAR", "CHAR" -> {
+                    return Bytes.toString(value)
+                }
+                "TIMESTAMP", "TIMESTAMP_WITH_LOCAL_TIME_ZONE", "BIGINT",
+                "INTERVAL_DAY", "INTERVAL_DAY_HOUR", "INTERVAL_DAY_MINUTE",
+                "INTERVAL_DAY_SECOND", "INTERVAL_HOUR", "INTERVAL_HOUR_MINUTE",
+                "INTERVAL_HOUR_SECOND", "INTERVAL_MINUTE", "INTERVAL_MINUTE_SECOND",
+                "INTERVAL_SECOND" -> {
+                    return Bytes.toLong(value)
+                }
+                "SMALLINT", "TINYINT" -> {
+                    return Bytes.toShort(value)
+                }
+                "BOOLEAN" -> {
+                    return Bytes.toBoolean(value)
+                }
+                "DECIMAL" -> {
+                    return Bytes.toBigDecimal(value)
+                }
+                "DOUBLE", "FLOAT" -> {
+                    return Bytes.toDouble(value)
+                }
+                "REAL" -> {
+                    return Bytes.toFloat(value)
+                }
+                "BINARY", "VARBINARY" -> {
+                    return value // fixme 需要确认是不是返回ByteArray
+                }
+                else -> throw AssertionError("unknown column type") // fixme 转换成CalciteException
+            }
         }
     }
 
-    class SqlEnumerableImpl<T>(rs: ResultScanner) : AbstractEnumerable<T>() {
-        private val resultScanner: Iterable<T> = rs as Iterable<T>
+    inner class SqlEnumerableImpl(rs: ResultScanner) : AbstractEnumerable<Array<Any>>() {
+        private val resultScanner: ResultScanner = rs
 
-        override fun enumerator(): Enumerator<T> {
-            return SqlEnumeratorImpl(resultScanner)
+        override fun enumerator(): Enumerator<Array<Any>> {
+            return SqlEnumeratorImpl<Array<Any>>(resultScanner)
         }
     }
 }

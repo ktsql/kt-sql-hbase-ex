@@ -1,5 +1,6 @@
 package me.principality.ktsql.backend.hbase
 
+import org.apache.calcite.avatica.util.ByteString
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl
 import org.apache.calcite.linq4j.Enumerable
 import org.apache.calcite.linq4j.tree.Expression
@@ -14,16 +15,24 @@ import org.apache.calcite.rex.RexCall
 import org.apache.calcite.rex.RexInputRef
 import org.apache.calcite.rex.RexLiteral
 import org.apache.calcite.rex.RexNode
+import org.apache.calcite.runtime.GeoFunctions
 import org.apache.calcite.schema.ModifiableTable
 import org.apache.calcite.schema.SchemaPlus
 import org.apache.calcite.schema.Schemas
 import org.apache.calcite.sql.SqlKind
+import org.apache.calcite.sql.type.BasicSqlType
+import org.apache.calcite.sql.type.IntervalSqlType
 import org.apache.calcite.sql.type.SqlTypeName
 import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.filter.*
 import org.apache.hadoop.hbase.util.Bytes
+import java.io.ByteArrayOutputStream
+import java.io.ObjectOutputStream
+import java.lang.IllegalArgumentException
+import java.math.BigDecimal
+import java.nio.ByteBuffer
 import java.util.*
 
 
@@ -86,7 +95,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
     }
 
     /**
-     * 返回一个内部类，可以访问所在类的上下文，按需调用
+     * 返回一个内部类Collection，可以访问所在类的上下文，按需调用，只实现Sql需要支持的接口
      */
     inner class HBaseMutableCollection(override val size: Int = 0) : MutableCollection<Any?> {
 
@@ -116,29 +125,16 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
 
             for ((index, columnDef) in columnDescriptors.withIndex()) {
                 if (columnDef.isPrimary) {
-                    val rowkey = values.get(index).toString()
-                    val put = Put(Bytes.toBytes(rowkey))
-
-                    // todo 使用typeFactory对col进行处理？
-//                    val typeFactory = JavaTypeFactoryImpl()
+                    val rowkey = values.get(index)
+                    val rowkeyBytes = convert(columnDef.type, rowkey)
+                    val put = Put(rowkeyBytes)
                     for ((idx, col) in values.withIndex()) {
-//                        val dataType = typeFactory.createSqlType(SqlTypeName.get(columnDescriptors.get(idx).type))
-//                        val javaType = typeFactory.getJavaClass(dataType)
                         if (idx != index) {
-                            val target = values.get(idx).toString()
-                            put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(columnDescriptors.get(idx).name), Bytes.toBytes(target))
+                            val colType = columnDescriptors.get(idx).type
+                            val columeBytes = convert(colType, col)
+                            put.addColumn(Bytes.toBytes(HBaseTable.columnFamily),
+                                    Bytes.toBytes(columnDescriptors.get(idx).name), columeBytes)
                         }
-//                        when (col.type) {
-//                            "INTEGER" -> {
-//                                target = col as String
-//                                put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(rowkey), Bytes.toBytes(target))
-//                            }
-//                            "VARCHAR" -> {
-//                                target = col as String
-//                                put.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(rowkey), Bytes.toBytes(target))
-//                            }
-//                            else -> target = null
-//                        }
                     }
 
                     val htable = getHTable(name)
@@ -190,14 +186,6 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         override fun retainAll(elements: Collection<Any?>): Boolean {
             TODO("not implemented")
         }
-
-        private fun get(get: Get): Collection<Row> {
-            TODO()
-        }
-
-        private fun convert(collection: Collection<Any?>): Get {
-            TODO()
-        }
     }
 
     /**
@@ -211,7 +199,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
         var rs: ResultScanner? = null
         try {
             rs = htable.getScanner(scan)
-            return SqlEnumerableImpl<Array<Any>>(rs)
+            return SqlEnumerableImpl(rs)
         } finally {
             rs!!.close()
             htable.close()
@@ -286,18 +274,94 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
 
         // 主键，用rowfilter，否则用SingleColumnValueFilter
         if (this.columnDescriptors.get(leftRef.index).isPrimary) {
-            return RowFilter(compareOp, BinaryComparator(Bytes.toBytes(value)))
+            return RowFilter(compareOp, BinaryComparator(value))
         } else {
             return SingleColumnValueFilter(Bytes.toBytes(columnFamily),//列族
                     Bytes.toBytes(this.columnDescriptors.get(leftRef.index).name),  //列名
-                    compareOp, Bytes.toBytes(value))
+                    compareOp, value)
         }
     }
 
-    private fun literalValue(literal: RexLiteral): String {
-        val value = literal.value2
-        val buf = StringBuilder()
-        buf.append(value)
-        return buf.toString()
+    /**
+     * convert只能还原原来的类型，不能进行类型转换
+     */
+    private fun convert(type: String, value: Any): ByteArray {
+        when (type) {
+            "DATE", "TIME", "TIME_WITH_LOCAL_TIME_ZONE",
+            "INTEGER", "INTERVAL_YEAR", "INTERVAL_YEAR_MONTH", "INTERVAL_MONTH" -> {
+                val target = value as Int
+                return Bytes.toBytes(target)
+            }
+            "VARCHAR", "CHAR" -> {
+                val target = value as String
+                return Bytes.toBytes(target)
+            }
+            "TIMESTAMP", "TIMESTAMP_WITH_LOCAL_TIME_ZONE", "BIGINT",
+            "INTERVAL_DAY", "INTERVAL_DAY_HOUR", "INTERVAL_DAY_MINUTE",
+            "INTERVAL_DAY_SECOND", "INTERVAL_HOUR", "INTERVAL_HOUR_MINUTE",
+            "INTERVAL_HOUR_SECOND", "INTERVAL_MINUTE", "INTERVAL_MINUTE_SECOND",
+            "INTERVAL_SECOND" -> {
+                val target = value as Long
+                return Bytes.toBytes(target)
+            }
+            "SMALLINT", "TINYINT" -> {
+                val target = value as Short
+                return Bytes.toBytes(target)
+            }
+            "BOOLEAN" -> {
+                val target = value as Boolean
+                return Bytes.toBytes(target)
+            }
+            "DECIMAL" -> {
+                val target = value as BigDecimal
+                return Bytes.toBytes(target)
+            }
+            "DOUBLE", "FLOAT" -> {
+                val target = value as Double
+                return Bytes.toBytes(target)
+            }
+            "REAL" -> {
+                val target = value as Float
+                return Bytes.toBytes(target)
+            }
+            "BINARY", "VARBINARY" -> {
+                val target = value as ByteBuffer
+                return Bytes.toBytes(target)
+            }
+            else -> throw AssertionError("unknown column type") // fixme 转换成CalciteException
+        }
+    }
+
+    private fun literalValue(literal: RexLiteral): ByteArray {
+        if (literal.value == null)
+            throw IllegalArgumentException("literal value null")
+
+        val value = getValue2(literal.type.sqlTypeName, literal.value, literal)
+        return convert(literal.type.sqlTypeName.name, value)
+    }
+
+    /**
+     * 根据目标的类型格式，把value转换成目标值，和convert()搭配
+     */
+    private fun getValue2(typeName: SqlTypeName, value: Any, literal: RexLiteral): Any {
+        when (typeName) {
+            SqlTypeName.CHAR ->
+                return literal.getValueAs<String>(String::class.java)
+            SqlTypeName.DECIMAL, SqlTypeName.TIMESTAMP,
+            SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE ->
+                return literal.getValueAs<Long>(Long::class.java)
+            SqlTypeName.DATE, SqlTypeName.TIME,
+            SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE ->
+                return literal.getValueAs<Int>(Int::class.java)
+            SqlTypeName.INTEGER ->
+                if (literal.typeName == SqlTypeName.DECIMAL) {
+                    val longVal = (literal.value as BigDecimal).unscaledValue().toLong()
+                    val intVal = longVal.toInt()
+                    return intVal
+                } else {
+                    return literal.getValueAs<Int>(Int::class.java)
+                }
+            else -> return value
+        }
     }
 }
