@@ -122,6 +122,54 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
          */
         override fun add(element: Any?): Boolean {
             val values = element as Array<Any>
+            if (values.size.equals(columnDescriptors.size)) {
+                return insert(element)
+            } else {
+                return update(element)
+            }
+        }
+
+        /**
+         * 按行对数据进行更新，找到rowkey，按键取值即可
+         */
+        private fun update(elements: Any?): Boolean {
+            val values = elements as Array<Any>
+
+            for ((index, columnDef) in columnDescriptors.withIndex()) {
+                if (columnDef.isPrimary) {
+                    val rowkey = values.get(index)
+                    val rowkeyBytes = convert(columnDef.type, rowkey)
+
+                    val put = Put(rowkeyBytes)
+
+                    val len = (values.size - columnDescriptors.size) / 2
+                    val putValues = values.sliceArray(columnDescriptors.size..columnDescriptors.size + len - 1)
+                    val colValues = values.sliceArray(columnDescriptors.size + len..values.size - 1)
+
+                    for ((idx, col) in putValues.withIndex()) {
+                        val colName = colValues.get(idx).toString()
+                        val colType = columnDescriptors.stream().filter { it.name == colName }
+                                .findFirst().get().type
+                        val columeBytes = convert(colType, col)
+                        put.addColumn(Bytes.toBytes(HBaseTable.columnFamily),
+                                Bytes.toBytes(colName), columeBytes)
+                    }
+
+                    val htable = getHTable(name)
+                    htable.put(put)
+                    htable.close()
+                    return true
+                }
+            }
+
+            return false
+        }
+
+        /**
+         * todo 检查主键是否存在，检查默认值，检查是否为null，检查是否自增等属性
+         */
+        private fun insert(elements: Any?): Boolean {
+            val values = elements as Array<Any>
 
             for ((index, columnDef) in columnDescriptors.withIndex()) {
                 if (columnDef.isPrimary) {

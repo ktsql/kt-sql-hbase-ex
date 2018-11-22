@@ -233,17 +233,17 @@ abstract class HBaseTable : AbstractQueryableTable {
         private var index = -1
 
         override fun moveNext(): Boolean {
-            if (index < results.size) {
-                index++
-                return true
-            }
-            return false
+            index++
+            return index < results.size
         }
 
         override fun current(): Array<Any> {
-            val result = results.get(index)
             val retArr = Array<Any>(columnDescriptors.size, {})
+            // 防止出问题
+            if (index >= results.size)
+                return retArr
 
+            val result = results.get(index)
             for (colDef in columnDescriptors) {
                 if (colDef.isPrimary) {
                     retArr.set(colDef.position, byteToAny(colDef.type, result.row))
