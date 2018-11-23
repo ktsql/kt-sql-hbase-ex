@@ -37,7 +37,7 @@ class KeyValueIndexTransTable : Closeable {
         try {
             this.connection.admin.use { hBaseAdmin ->
                 if (!hBaseAdmin.tableExists(secondaryIndexTableName)) {
-                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
+//                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
                 }
                 secondaryIndexHTable = this.connection.getTable(secondaryIndexTableName)
             }

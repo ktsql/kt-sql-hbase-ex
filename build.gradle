@@ -1,6 +1,6 @@
 buildscript {
     ext.calcite_version = '1.17.0'
-    ext.hbaseclient_version = '2.0.2'
+    ext.hbaseclient_version = '2.0.2'  // 1.4.8, 1.3.1, 1.2.8
     ext.tephra_version = '0.15.0-incubating'
     ext.kotlinlogging_version = '1.5.6'
     ext.config4k_version = '0.3.4'

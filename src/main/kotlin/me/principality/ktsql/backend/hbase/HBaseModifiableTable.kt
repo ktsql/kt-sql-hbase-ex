@@ -216,15 +216,29 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
          * 在timestamp不暴露的前提下，依赖rowkey和column对数据进行定位
          *
          * delete调用的是removeAll操作
-         * removeAll是通过rowkey的方式来表达，还是通过范围处理来表达？
+         * removeAll是通过rowkey的方式来表达，一次性传进来多个删除对象，通过范围来处理
          */
         override fun removeAll(elements: Collection<Any?>): Boolean {
             val deletes = ArrayList<Delete>()
-            val targets = elements as Collection<String> // fixme hack cast
+            val targets = elements as Collection<Any>
             for (target in targets) {
-                val delete = Delete(Bytes.toBytes(target))
-                deletes.add(delete)
+                val values = target as Array<Any>
+                for ((index, columnDef) in columnDescriptors.withIndex()) {
+                    if (columnDef.isPrimary) {
+                        val rowkey = values.get(index)
+                        val rowkeyBytes = convert(columnDef.type, rowkey)
+                        val delete = Delete(rowkeyBytes)
+//                        for (other in columnDescriptors) {
+//                            if (!other.isPrimary) {
+//                                delete.addColumns(Bytes.toBytes(columnFamily), Bytes.toBytes(other.name));
+//                            }
+//                        }
+                        deletes.add(delete)
+                        break
+                    }
+                }
             }
+
             val htable = getHTable(name)
             htable.delete(deletes)
             htable.close()
@@ -393,7 +407,7 @@ abstract class HBaseModifiableTable(name: String, descriptor: HTableDescriptor) 
      */
     private fun getValue2(typeName: SqlTypeName, value: Any, literal: RexLiteral): Any {
         when (typeName) {
-            SqlTypeName.CHAR ->
+            SqlTypeName.CHAR, SqlTypeName.VARCHAR ->
                 return literal.getValueAs<String>(String::class.java)
             SqlTypeName.DECIMAL, SqlTypeName.TIMESTAMP,
             SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE ->

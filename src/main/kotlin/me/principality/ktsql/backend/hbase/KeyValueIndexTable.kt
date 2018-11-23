@@ -2,6 +2,8 @@ package me.principality.ktsql.backend.hbase
 
 import com.google.common.base.Throwables
 import org.apache.hadoop.hbase.CellUtil
+import org.apache.hadoop.hbase.HColumnDescriptor
+import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.util.Bytes
@@ -31,7 +33,10 @@ class KeyValueIndexTable : Closeable {
         try {
             this.connection.admin.use { hBaseAdmin ->
                 if (!hBaseAdmin.tableExists(secondaryIndexTableName)) {
-                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
+                    val tableDescriptor = HTableDescriptor(secondaryIndexTableName)
+                    tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
+                    hBaseAdmin.createTable(tableDescriptor)
+//                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
                 }
                 secondaryIndexHTable = this.connection.getTable(secondaryIndexTableName)
             }
