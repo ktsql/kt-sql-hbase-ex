@@ -103,7 +103,8 @@ class HBaseSchema : AbstractSchema {
                     protoRowType: RelProtoDataType,
                     initializerExpressionFactory: InitializerExpressionFactory,
                     keyConstraint: List<String>?,
-                    defaultValues: Map<String, Any?>): Table {
+                    defaultValues: Map<String, Any?>,
+                    isTransactional: Boolean): Table {
         val typeFactory = JavaTypeFactoryImpl()
 
         // 检查column的名字
@@ -117,7 +118,7 @@ class HBaseSchema : AbstractSchema {
         // 在table.sys创建相应的记录
         val put0 = Put(Bytes.toBytes(tableSystableRowkey(name)))
         put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.TABLE_PATH.name), Bytes.toBytes(name))
-        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.IS_TRANSACTIONAL.name), Bytes.toBytes(false.toString()))
+        put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.IS_TRANSACTIONAL.name), Bytes.toBytes(isTransactional.toString()))
         put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.INDEX_TYPE.name), Bytes.toBytes(HBaseTable.IndexType.NONE.name))
         put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.LOCK_STATUS.name), Bytes.toBytes(HBaseTable.LockStatus.UNLOCK.name))
         put0.addColumn(Bytes.toBytes(HBaseTable.columnFamily), Bytes.toBytes(HBaseTable.SystemAttribute.CREATE_TIME.name), Bytes.toBytes(LocalDateTime.now().toString()))

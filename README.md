@@ -21,8 +21,9 @@
 
 1. sys 表示系统表
 2. kv 表示KV型索引表
+3. bitmap 表示bitmapInvertedIndex
 
-一个实现了KV型二次索引的表table，会生成一个table.kv.index_name的表，
+一个实现了KV型二次索引的表table，会生成一个table_name.kv的表，
 每一行的数据，都保存了从索引键到rowkey的对应关系
 
 ### 系统表
@@ -48,5 +49,3 @@ column.sys的rowkey设计为：schema_path+tablename+column_name，包含字段�
 7. 备注
 
 主键必须在创建表时指定，否则会报错。支持多个字段组成主键。主键创建对性能影响很大，需要谨慎选择
-
-表字段是否唯一、约束暂不考虑，待逐步完善

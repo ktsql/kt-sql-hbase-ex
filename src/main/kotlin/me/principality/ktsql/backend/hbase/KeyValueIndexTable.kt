@@ -2,8 +2,6 @@ package me.principality.ktsql.backend.hbase
 
 import com.google.common.base.Throwables
 import org.apache.hadoop.hbase.CellUtil
-import org.apache.hadoop.hbase.HColumnDescriptor
-import org.apache.hadoop.hbase.HTableDescriptor
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
 import org.apache.hadoop.hbase.util.Bytes
@@ -18,27 +16,28 @@ class KeyValueIndexTable : Closeable {
     private val sourceHTable: Table
     private val indexHTable: Table
     private val secondaryIndexTableName: TableName
-    private val connection: Connection
-    private val secondaryIndex: ByteArray
+    private val hbaseConnection: Connection
+    private val secondaryIndexColumn: ByteArray
 
     @Throws(IOException::class)
     constructor(table: Table,
-                secondaryIndex: ByteArray,
+                columnName: ByteArray,
                 indexName: String,
                 indexType: String = HBaseTable.IndexType.KEY_VALUE.name) {
-        secondaryIndexTableName = TableName.valueOf(HBaseUtils.indexTableName(table.name.nameAsString, indexName, indexType))
-        this.connection = HBaseConnection.connection()
-        this.secondaryIndex = secondaryIndex
+        secondaryIndexTableName =
+                TableName.valueOf(HBaseUtils.indexTableName(table.name.nameAsString, indexName, indexType))
+        this.hbaseConnection = HBaseConnection.connection()
+        this.secondaryIndexColumn = columnName
         var secondaryIndexHTable: Table? = null
         try {
-            this.connection.admin.use { hBaseAdmin ->
+            this.hbaseConnection.admin.use { hBaseAdmin ->
                 if (!hBaseAdmin.tableExists(secondaryIndexTableName)) {
-                    val tableDescriptor = HTableDescriptor(secondaryIndexTableName)
-                    tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
-                    hBaseAdmin.createTable(tableDescriptor)
-//                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
+//                    val tableDescriptor = HTableDescriptor(secondaryIndexTableName)
+//                    tableDescriptor.addFamily(HColumnDescriptor(HBaseTable.columnFamily))
+//                    hBaseAdmin.createTable(tableDescriptor)
+                    hBaseAdmin.createTable(TableDescriptorBuilder.newBuilder(secondaryIndexTableName).build())
                 }
-                secondaryIndexHTable = this.connection.getTable(secondaryIndexTableName)
+                secondaryIndexHTable = this.hbaseConnection.getTable(secondaryIndexTableName)
             }
         } catch (e: Exception) {
             Throwables.propagate(e)
@@ -54,25 +53,14 @@ class KeyValueIndexTable : Closeable {
         private val DELIMITER = byteArrayOf(0)
     }
 
+    /**
+     * 根据特定值（必须相等），从二次索引获取相应的rowkey，这里可以修改为filter的方式
+     */
     @Throws(IOException::class)
-    operator fun get(get: Get): Result {
-        return get(listOf(get))!![0]
-    }
-
-    @Throws(IOException::class)
-    operator fun get(gets: List<Get>): Array<Result>? {
+    fun getByIndex(qualifier: ByteArray, value: ByteArray): Array<Result>? {
         try {
-            val result = sourceHTable.get(gets)
-            return result
-        } catch (e: Exception) {
-            throw IOException("Could not rollback transaction", e)
-        }
-    }
-
-    @Throws(IOException::class)
-    fun getByIndex(value: ByteArray): Array<Result>? {
-        try {
-            val scan = Scan(value, Bytes.add(value, ByteArray(0)))
+            val key = Bytes.add(qualifier, DELIMITER, Bytes.add(value, DELIMITER))
+            val scan = Scan(key, Bytes.add(key, ByteArray(0)))
             scan.addColumn(secondaryIndexFamily, secondaryIndexQualifier)
             val indexScanner = indexHTable.getScanner(scan)
 
@@ -82,8 +70,7 @@ class KeyValueIndexTable : Closeable {
                     gets.add(Get(CellUtil.cloneValue(cell)))
                 }
             }
-            val results = sourceHTable.get(gets)
-            return results
+            return sourceHTable.get(gets)
         } catch (e: Exception) {
             throw IOException("Could not rollback transaction", e)
         }
@@ -94,6 +81,9 @@ class KeyValueIndexTable : Closeable {
         put(listOf(put))
     }
 
+    /**
+     * 写入的记录的时候，根据操作的对象是否包含二次索引，进行写入操作
+     */
     @Throws(IOException::class)
     fun put(puts: List<Put>) {
         try {
@@ -104,10 +94,12 @@ class KeyValueIndexTable : Closeable {
                 for ((_, value1) in familyMap) {
                     for (value in value1) {
                         if (Bytes.equals(value.qualifierArray, value.qualifierOffset, value.qualifierLength,
-                                        secondaryIndex, 0, secondaryIndex.size)) {
-                            val secondaryRow = Bytes.add(CellUtil.cloneQualifier(value), DELIMITER,
-                                    Bytes.add(CellUtil.cloneValue(value), DELIMITER,
-                                            CellUtil.cloneRow(value)))
+                                        secondaryIndexColumn, 0, secondaryIndexColumn.size)) {
+                            // 二次索引的rowkey为：索引名|索引值|Rowkey
+                            val secondaryRow = Bytes.add(
+                                    CellUtil.cloneQualifier(value),
+                                    DELIMITER,
+                                    Bytes.add(CellUtil.cloneValue(value), DELIMITER, CellUtil.cloneRow(value)))
                             val indexPut = Put(secondaryRow)
                             indexPut.addColumn(secondaryIndexFamily, secondaryIndexQualifier, put.row)
                             indexPuts.add(indexPut)
@@ -119,24 +111,16 @@ class KeyValueIndexTable : Closeable {
             sourceHTable.put(puts)
             indexHTable.put(secondaryIndexPuts)
         } catch (e: Exception) {
-            throw IOException("Could not rollback transaction", e)
+            throw IOException("Could not write secondary index", e)
         }
     }
 
     @Throws(IOException::class)
     override fun close() {
         try {
-            sourceHTable.close()
+            indexHTable.close()
         } catch (e: IOException) {
-            try {
-                indexHTable.close()
-            } catch (ex: IOException) {
-                e.addSuppressed(ex)
-            }
-
             throw e
         }
-
-        indexHTable.close()
     }
 }
