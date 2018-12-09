@@ -1,5 +1,6 @@
 package me.principality.ktsql.backend.hbase
 
+import me.principality.ktsql.backend.hbase.index.KeyValueIndexTable
 import org.apache.calcite.adapter.java.AbstractQueryableTable
 import org.apache.calcite.linq4j.AbstractEnumerable
 import org.apache.calcite.linq4j.Enumerator

@@ -1,6 +1,9 @@
-package me.principality.ktsql.backend.hbase
+package me.principality.ktsql.backend.hbase.index
 
 import com.google.common.base.Throwables
+import me.principality.ktsql.backend.hbase.HBaseConnection
+import me.principality.ktsql.backend.hbase.HBaseTable
+import me.principality.ktsql.backend.hbase.HBaseUtils
 import org.apache.hadoop.hbase.CellUtil
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.*
