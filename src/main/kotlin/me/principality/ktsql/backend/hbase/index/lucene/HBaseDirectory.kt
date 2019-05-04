@@ -4,6 +4,19 @@ import org.apache.lucene.store.*
 
 /**
  * 实现lucene的定制化存储
+ *
+ * Directory保存了一系列的索引文件，文件以单层树形的方式组织，在Directory中的索引文件支持：
+ * 1. 创建、追加、关闭
+ * 2. 当文件被打开而写入时，读取可能不被允许，只有写入被关闭后才解除读取锁定
+ * 3. 一旦索引文件被创建，只允许操作（写入或删除），不允许重复创建
+ *
+ * 因索引文件可能变得很大，采用表的方式来保存索引文件，Directory则为表的Schema
+ *
+ * 实现Directory的接口时，需要考虑IndexOutput、IndexInput、LockFactory(用于初始化BaseDirectory)
+ *
+ * 实际实现时，要考虑以下要点：
+ * 1. 要考虑并发读写的性能(不同的请求用不同的客户端来访问)
+ * 2. 支持分布式锁？锁需要很高的性能支持，考虑放到mapdb上实现(http://www.mapdb.org/javadoc/latest/mapdb/org/mapdb/Atomic.html)
  */
 class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
     /**

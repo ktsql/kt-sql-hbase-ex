@@ -22,6 +22,7 @@
 1. sys 表示系统表
 2. kv 表示KV型索引表
 3. bitmap 表示bitmapInvertedIndex
+4. lucene 表示基于lucene的索引实现
 
 一个实现了KV型二次索引的表table，会生成一个table_name.kv的表，
 每一行的数据，都保存了从索引键到rowkey的对应关系
