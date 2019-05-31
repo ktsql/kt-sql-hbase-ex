@@ -24,6 +24,7 @@ dependencies {
     // 功能库
 //    compile group: 'org.roaringbitmap', name: 'RoaringBitmap', version: '0.7.24'
     compile group: 'org.apache.lucene', name: 'lucene-core', version: '8.0.0'
+    compile group: 'redis.clients', name: 'jedis', version: '3.0.1'
     compile "org.apache.calcite:calcite-core:$calcite_version"
     compile group: 'org.apache.hbase', name: 'hbase-client', version: "$hbaseclient_version"
     compile "org.apache.tephra:tephra-api:$tephra_version"

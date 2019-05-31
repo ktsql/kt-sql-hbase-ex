@@ -3,7 +3,7 @@ package me.principality.ktsql.backend.hbase.index.lucene
 import org.apache.lucene.store.IndexOutput
 
 /**
- * 基于HBase的
+ * 基于HBase的IndexOutput，把HBase的一个表（或者一行）映射为IndexOutput
  */
 class HBaseIndexOutput(resourceDescription: String?, name: String?) : IndexOutput(resourceDescription, name)
 {
