@@ -1,5 +1,6 @@
 package me.principality.ktsql.backend.hbase
 
+import me.principality.ktsql.backend.hbase.utils.ConfigProvider
 import org.junit.Test
 
 /**
@@ -10,7 +11,6 @@ class LuceneTest {
     @Test
     fun testSaving() {
         val map = fakeOperands()
-
     }
 
     @Test
@@ -21,8 +21,8 @@ class LuceneTest {
     private fun fakeOperands(): MutableMap<String, Any> {
         val map = HashMap<String, Any>()
 
-        val zkquorum: String = "127.0.0.1:2222"
-        val flavor = "FILTERABLE"
+        val zkquorum: String = ConfigProvider.zkquorum
+        val flavor = ConfigProvider.flavor
 
         map.put("zkquorum", zkquorum)
         map.put("flavor", flavor)
