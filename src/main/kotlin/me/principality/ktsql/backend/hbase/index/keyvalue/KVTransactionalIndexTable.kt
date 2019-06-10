@@ -1,4 +1,4 @@
-package me.principality.ktsql.backend.hbase.index
+package me.principality.ktsql.backend.hbase.index.keyvalue
 
 import com.google.common.base.Throwables
 import me.principality.ktsql.backend.hbase.HBaseConnection
@@ -19,7 +19,7 @@ import java.util.*
 /**
  * 二次索引实现，基于tephra保证索引和数据变更的强一致性，待依据设计进一步改进
  */
-class KeyValueIndexTransTable : Closeable {
+class KVTransactionalIndexTable : Closeable {
     private val transactionAwareHTable: TransactionAwareHTable
     private val secondaryIndexTable: TransactionAwareHTable
     private val transactionContext: TransactionContext

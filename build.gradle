@@ -27,9 +27,9 @@ dependencies {
     compile group: 'redis.clients', name: 'jedis', version: '3.0.1'
     compile "org.apache.calcite:calcite-core:$calcite_version"
     compile group: 'org.apache.hbase', name: 'hbase-client', version: "$hbaseclient_version"
-//    compile "org.apache.tephra:tephra-api:$tephra_version"
-//    compile "org.apache.tephra:tephra-core:$tephra_version"
-//    compile "org.apache.tephra:tephra-hbase-compat-2.0:$tephra_version"
+    compile "org.apache.tephra:tephra-api:$tephra_version"
+    compile "org.apache.tephra:tephra-core:$tephra_version"
+    compile "org.apache.tephra:tephra-hbase-compat-2.0:$tephra_version"
     // 支持库
     compile "io.github.microutils:kotlin-logging:$kotlinlogging_version"
     compile "io.github.config4k:config4k:$config4k_version"

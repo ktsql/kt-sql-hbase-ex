@@ -1,4 +1,4 @@
-package me.principality.ktsql.backend.hbase.index
+package me.principality.ktsql.backend.hbase.index.keyvalue
 
 import com.google.common.base.Throwables
 import me.principality.ktsql.backend.hbase.HBaseConnection
@@ -15,7 +15,7 @@ import java.util.*
 /**
  * 二次索引实现，这是一个不包含事务的实现版本，作为早期版本测试用
  */
-class KeyValueIndexTable : Closeable {
+class KVIndexTable : Closeable {
     private val sourceHTable: Table
     private val indexHTable: Table
     private val secondaryIndexTableName: TableName

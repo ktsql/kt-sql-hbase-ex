@@ -1,4 +1,4 @@
-package me.principality.ktsql.backend.hbase.index
+package me.principality.ktsql.backend.hbase.index.lucene
 
 /**
  * 基于Lucene的Index机制，实现对记录的索引

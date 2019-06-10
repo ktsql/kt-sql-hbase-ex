@@ -1,6 +1,6 @@
 package me.principality.ktsql.backend.hbase
 
-import me.principality.ktsql.backend.hbase.index.KeyValueIndexTable
+import me.principality.ktsql.backend.hbase.index.keyvalue.KVIndexTable
 import org.apache.calcite.adapter.java.AbstractQueryableTable
 import org.apache.calcite.linq4j.AbstractEnumerable
 import org.apache.calcite.linq4j.Enumerator
@@ -56,7 +56,7 @@ abstract class HBaseTable : AbstractQueryableTable {
     protected val htableDescriptor: HTableDescriptor
     protected val isTransactional: Boolean // 默认为真，可以手动指明非真，用于快速插入数据
     protected val indexType: IndexType // 默认的索引方式，如果含索引，需要使用索引辅助类实现读写操作
-    protected val secondaryIndexTable: KeyValueIndexTable?
+    protected val secondaryIndexTable: KVIndexTable?
     protected val columnDescriptors: List<ColumnType>
 
     companion object {
