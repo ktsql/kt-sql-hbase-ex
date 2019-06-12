@@ -1,7 +1,7 @@
 # 概述
 
 该项目用于实现calcite对HBase的支持，在该项目的支持下，calcite获得以下功能：
-1. calcite-hbase-adaptor
+1. calcite-hbase-adaptor calcite将可以访问hbase
 2. calcite-server ddl扩展所需的底层存储功能支持
    - 表创建/删除/查询
    - 索引创建/删除/查询
