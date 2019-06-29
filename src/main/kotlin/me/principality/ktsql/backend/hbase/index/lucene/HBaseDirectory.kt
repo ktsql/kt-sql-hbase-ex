@@ -1,6 +1,7 @@
 package me.principality.ktsql.backend.hbase.index.lucene
 
 import org.apache.lucene.store.*
+import java.io.IOException
 
 /**
  * 实现lucene的定制化存储
@@ -21,6 +22,13 @@ import org.apache.lucene.store.*
  * 如果不需要Lock，可以使用 NoLockFactory
  */
 class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
+    private val inputMap = HashMap<String, HBaseIndexInput>()
+    private val outputMap = HashMap<String, HBaseIndexOutput>()
+
+    init {
+        // 从系统中，把所有HBaseTable里面的列都读出来吗？
+    }
+
     /**
      * Opens a stream for reading an existing file.
      *
@@ -31,7 +39,9 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @throws IOException in case of I/O error
      */
     override fun openInput(name: String?, context: IOContext?): IndexInput {
-        TODO("not implemented")
+        val input = HBaseIndexInput(name)
+        inputMap.put(name!!, input)
+        return input
     }
 
     /**
@@ -44,7 +54,8 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @throws IOException in case of I/O error
      */
     override fun deleteFile(name: String?) {
-        TODO("not implemented")
+        inputMap.remove(name)
+        outputMap.remove(name)
     }
 
     /**
@@ -55,7 +66,9 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * `prefix`, end with `suffix` and have a reserved file extension `.tmp`.
      */
     override fun createTempOutput(prefix: String?, suffix: String?, context: IOContext?): IndexOutput {
-        TODO("not implemented")
+        val output = HBaseIndexOutput("", "${prefix}.${suffix}")
+        outputMap.put("${prefix}.${suffix}", output)
+        return output
     }
 
     /**
@@ -68,7 +81,7 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @see .syncMetaData
      */
     override fun sync(names: MutableCollection<String>?) {
-        TODO("not implemented")
+        // 需要提供 name -> IndexOutput 的关联，用于刷新
     }
 
     /**
@@ -78,7 +91,8 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @throws IOException in case of I/O error
      */
     override fun listAll(): Array<String> {
-        TODO("not implemented")
+        // 从HBase中把数据都读出来
+        return Array<String>(size = 0, init = {})
     }
 
     /**
@@ -119,7 +133,9 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @throws IOException in case of I/O error
      */
     override fun createOutput(name: String?, context: IOContext?): IndexOutput {
-        TODO("not implemented")
+        val output = HBaseIndexOutput("", name)
+        outputMap.put(name!!, output)
+        return output
     }
 
     /**
@@ -132,13 +148,18 @@ class HBaseDirectory(lockFactory: LockFactory?) : BaseDirectory(lockFactory) {
      * @throws IOException in case of I/O error
      */
     override fun fileLength(name: String?): Long {
-        TODO("not implemented")
+        if (inputMap.get(name) != null) {
+            val input = inputMap.get(name)
+            return input!!.length()
+        } else {
+            // 要扫描整个HBaseTable吗？
+            throw IOException("name not found")
+        }
     }
 
     /**
      * Closes the directory.
      */
     override fun close() {
-        TODO("not implemented")
     }
 }

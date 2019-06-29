@@ -7,6 +7,7 @@ import java.util.UUID.randomUUID
 object HBaseUtils {
     val SYSTEM_TABLE_NAME = "table.sys"
     val SYSTEM_COLUMN_NAME = "column.sys"
+    val LUCENE_INDEX_TABLE_NAME = "lucene.index.sys"
 
     /**
      * 根据参数返回indexTable的名称
